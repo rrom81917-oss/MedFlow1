@@ -18,7 +18,7 @@ const fetchGrokInsight = async (promptText) => {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${GROK_API_KEY}`
+        "Authorization": 'Bearer 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'
       },
       body: JSON.stringify({
         messages: [
@@ -29,6 +29,11 @@ const fetchGrokInsight = async (promptText) => {
         temperature: 0.3
       })
     });
+    const suggestNegHistoryAndTests = async (complaint, symptoms) => {
+      const prompt = `Complaint: ${complaint}, Symptoms: ${symptoms}. Return JSON: {"negativeHistory": [...], "investigations": [...]}`;
+      const result = await fetchGrokInsight(prompt);
+      // parse result, setNegHistorySuggestions(...), setInvestigationSuggestions(...)
+    };
 
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`);
@@ -45,11 +50,11 @@ const fetchGrokInsight = async (promptText) => {
 
 // --- Initial Patients List ---
 const INITIAL_PATIENTS = [
-  { id: '#9', name: 'Tantiya', age: '28y', gender: 'male', uhid: 'EHR572288', triage: 'GREEN', status: 'Doctor', complaint: 'Headache for 2 days', vitals: { bp: '120/80', pulse: '78', temp: '98.6', spo2: '98' } },
+  { id: '#9', name: 'chaudhary', age: '28y', gender: 'male', uhid: 'EHR572288', triage: 'GREEN', status: 'Doctor', complaint: 'Headache for 2 days', vitals: { bp: '120/80', pulse: '78', temp: '98.6', spo2: '98' } },
   { id: '#8', name: 'Kavitha Rao', age: '24y', gender: 'female', uhid: 'EHR100004', triage: 'GREEN', status: 'Doctor', complaint: 'Labour pain, 38 wks', vitals: { bp: '130/85', pulse: '82', temp: '99.0', spo2: '99' } },
-  { id: '#7', name: 'Highig', age: '23y', gender: 'female', uhid: 'EHR614172', triage: 'GREEN', status: 'Doctor', complaint: 'Poor feeding in baby', vitals: { bp: '110/70', pulse: '110', temp: '98.4', spo2: '97' } },
-  { id: '#3', name: 'Mohammed Ishaq', age: '58y', gender: 'male', uhid: 'EHR100003', triage: 'RED', status: 'Nursing', complaint: 'Head injury after RTA', vitals: null },
-  { id: '#1', name: 'Ramesh Kumar', age: '45y', gender: 'male', uhid: 'EHR100001', triage: 'GREEN', status: 'Pharmacy', complaint: 'Fever and body ache', vitals: { bp: '124/82', pulse: '88', temp: '101.2', spo2: '96' }, diagnoses: ['Viral Fever'], prescriptions: [{id: 1, name: 'Tab Paracetamol 500mg', dosage: '1-1-1', duration: '3 Days'}] },
+  { id: '#7', name: 'Hadiya', age: '23y', gender: 'female', uhid: 'EHR614172', triage: 'GREEN', status: 'Doctor', complaint: 'Poor feeding in baby', vitals: { bp: '110/70', pulse: '110', temp: '98.4', spo2: '97' } },
+  { id: '#3', name: 'viko', age: '58y', gender: 'male', uhid: 'EHR100003', triage: 'RED', status: 'Nursing', complaint: 'Head injury after RTA', vitals: null },
+  { id: '#1', name: 'Ramesh chaudhary', age: '45y', gender: 'male', uhid: 'EHR100001', triage: 'GREEN', status: 'Pharmacy', complaint: 'Fever and body ache', vitals: { bp: '124/82', pulse: '88', temp: '101.2', spo2: '96' }, diagnoses: ['Viral Fever'], prescriptions: [{id: 1, name: 'Tab Paracetamol 500mg', dosage: '1-1-1', duration: '3 Days'}] },
 ];
 
 // --- Comprehensive Symptoms DB ---
@@ -64,8 +69,69 @@ const SYMPTOMS_DB = [
   { id: 'gm7', category: 'General Medicine', name: 'Clubbing of Digits' },
   { id: 'gm8', category: 'General Medicine', name: 'Syncope / Fainting' },
 
+  // Infectious Disease
+  { id: 'id1', category: 'Infectious Disease', name: 'Chills' },
+  { id: 'id2', category: 'Infectious Disease', name: 'Rigors (Shaking Chills)' },
+  { id: 'id3', category: 'Infectious Disease', name: 'Night Sweats' },
+  { id: 'id4', category: 'Infectious Disease', name: 'Diaphoresis' },
+  { id: 'id5', category: 'Infectious Disease', name: 'Malaise' },
+  { id: 'id6', category: 'Infectious Disease', name: 'Myalgia (Muscle Aches)' },
+  { id: 'id7', category: 'Infectious Disease', name: 'Arthralgia (Joint Pain)' },
+  { id: 'id8', category: 'Infectious Disease', name: 'Anorexia' },
+  { id: 'id9', category: 'Infectious Disease', name: 'Headache' },
+  { id: 'id10', category: 'Infectious Disease', name: 'Nuchal Rigidity' },
+  { id: 'id11', category: 'Infectious Disease', name: 'Photophobia' },
+  { id: 'id12', category: 'Infectious Disease', name: 'Phonophobia' },
+  { id: 'id13', category: 'Infectious Disease', name: 'Altered Mental Status (Confusion/Delirium)' },
+  { id: 'id14', category: 'Infectious Disease', name: 'Seizures' },
+  { id: 'id15', category: 'Infectious Disease', name: 'Maculopapular Rash' },
+  { id: 'id16', category: 'Infectious Disease', name: 'Petechiae' },
+  { id: 'id17', category: 'Infectious Disease', name: 'Purpura' },
+  { id: 'id18', category: 'Infectious Disease', name: 'Vesicular Rash' },
+  { id: 'id19', category: 'Infectious Disease', name: 'Pustular Lesions' },
+  { id: 'id20', category: 'Infectious Disease', name: 'Cutaneous or Mucosal Ulcers' },
+  { id: 'id21', category: 'Infectious Disease', name: 'Erythema' },
+  { id: 'id22', category: 'Infectious Disease', name: 'Eschar (Necrotic Tissue/Scab)' },
+  { id: 'id23', category: 'Infectious Disease', name: 'Pruritus (Itching)' },
+  { id: 'id24', category: 'Infectious Disease', name: 'Lymphadenopathy' },
+  { id: 'id25', category: 'Infectious Disease', name: 'Cough' },
+  { id: 'id26', category: 'Infectious Disease', name: 'Sputum Production' },
+  { id: 'id27', category: 'Infectious Disease', name: 'Hemoptysis' },
+  { id: 'id28', category: 'Infectious Disease', name: 'Dyspnea' },
+  { id: 'id29', category: 'Infectious Disease', name: 'Tachypnea' },
+  { id: 'id30', category: 'Infectious Disease', name: 'Coryza (Nasal Inflammation)' },
+  { id: 'id31', category: 'Infectious Disease', name: 'Rhinorrhea' },
+  { id: 'id32', category: 'Infectious Disease', name: 'Sore Throat (Pharyngitis)' },
+  { id: 'id33', category: 'Infectious Disease', name: 'Odynophagia (Painful Swallowing)' },
+  { id: 'id34', category: 'Infectious Disease', name: 'Dysphagia (Difficulty Swallowing)' },
+  { id: 'id35', category: 'Infectious Disease', name: 'Nausea' },
+  { id: 'id36', category: 'Infectious Disease', name: 'Vomiting' },
+  { id: 'id37', category: 'Infectious Disease', name: 'Watery Diarrhea' },
+  { id: 'id38', category: 'Infectious Disease', name: 'Dysentery (Bloody Diarrhea)' },
+  { id: 'id39', category: 'Infectious Disease', name: 'Tenesmus' },
+  { id: 'id40', category: 'Infectious Disease', name: 'Abdominal Pain/Cramping' },
+  { id: 'id41', category: 'Infectious Disease', name: 'Dysuria (Painful Urination)' },
+  { id: 'id42', category: 'Infectious Disease', name: 'Urinary Frequency' },
+  { id: 'id43', category: 'Infectious Disease', name: 'Urinary Urgency' },
+  { id: 'id44', category: 'Infectious Disease', name: 'Hematuria' },
+  { id: 'id45', category: 'Infectious Disease', name: 'Flank Pain' },
+  { id: 'id46', category: 'Infectious Disease', name: 'Urethral Discharge' },
+  { id: 'id47', category: 'Infectious Disease', name: 'Vaginal Discharge' },
+  { id: 'id48', category: 'Infectious Disease', name: 'Pelvic Pain' },
+  { id: 'id49', category: 'Infectious Disease', name: 'Genital Ulcers or Warts' },
+  { id: 'id50', category: 'Infectious Disease', name: 'Bone Pain' },
+  { id: 'id51', category: 'Infectious Disease', name: 'Joint Swelling/Effusion' },
+  { id: 'id52', category: 'Infectious Disease', name: 'Muscle Spasms/Rigidity' },
+  { id: 'id53', category: 'Infectious Disease', name: 'Otalgia (Ear Pain)' },
+  { id: 'id54', category: 'Infectious Disease', name: 'Otorrhea (Ear Discharge)' },
+  { id: 'id55', category: 'Infectious Disease', name: 'Conjunctival Injection (Red Eyes)' },
+  { id: 'id56', category: 'Infectious Disease', name: 'Purulent Eye Discharge' },
+  { id: 'id57', category: 'Infectious Disease', name: 'Left Upper Quadrant Fullness/Pain (Splenomegaly)' },
+
   // OBG & Gynecology
-  { id: 'o1', category: 'OBG & Gynec', name: 'Amenorrhea (Absence of Menses)' },
+  { id: 'o1', category: 'OBG & Gynec', name: 'Antenatal care/ANC' },
+  { id: 'o11', category: 'OBG & Gynec', name: 'Postnatal care/PNC' },
+  { id: 'o12', category: 'OBG & Gynec', name: 'Amenorrhea (Absence of Menses)' },
   { id: 'o2', category: 'OBG & Gynec', name: 'Dysmenorrhea (Painful Menses)' },
   { id: 'o3', category: 'OBG & Gynec', name: 'Menorrhagia (Heavy Bleeding)' },
   { id: 'o4', category: 'OBG & Gynec', name: 'Postmenopausal Bleeding' },
@@ -75,6 +141,10 @@ const SYMPTOMS_DB = [
   { id: 'o8', category: 'OBG & Gynec', name: 'Labour Pain' },
   { id: 'o9', category: 'OBG & Gynec', name: 'Leaking P/V (Amniotic Fluid)' },
   { id: 'o10', category: 'OBG & Gynec', name: 'Decreased Fetal Movements' },
+  { id: 'o13', category: 'OBG & Gynec', name: 'Mild anamia with 9-10 gm/dl' },
+  { id: 'o14', category: 'OBG & Gynec', name: 'Moderate anamia with 7.8-9 gm/dl' },
+  { id: 'o15', category: 'OBG & Gynec', name: 'Sever anamia with less than 7 gm/dl' },
+  { id: 'o16', category: 'OBG & Gynec', name: 'Very sever anamia with less than 5 gm/dl' },
 
   // ENT
   { id: 'e1', category: 'ENT', name: 'Earache (Otalgia)' },
@@ -104,6 +174,62 @@ const SYMPTOMS_DB = [
   { id: 's7', category: 'Surgery', name: 'Melena (Black Tarry Stools)' },
   { id: 's8', category: 'Surgery', name: 'Intermittent Claudication' },
   { id: 's9', category: 'Surgery', name: 'Burns' },
+  { id: 's61', category: 'Surgery', name: 'Dog Bite' },
+  { id: 's62', category: 'Surgery', name: 'Snack Bite' },
+  { id: 's63', category: 'Surgery', name: 'Something Bite' },
+
+// Trauma
+  { id: 's10', category: 'Trauma', name: 'Head Injury / Loss of Consciousness' },
+  { id: 's11', category: 'Trauma', name: 'Scalp Laceration' },
+  { id: 's12', category: 'Trauma', name: 'Battle\'s Sign / Raccoon Eyes' },
+  { id: 's13', category: 'Trauma', name: 'CSF Rhinorrhea / Otorrhea' },
+  { id: 's14', category: 'Trauma', name: 'Facial Bone Deformity' },
+  { id: 's15', category: 'Trauma', name: 'Neck Swelling / Hematoma' },
+  { id: 's16', category: 'Trauma', name: 'Penetrating Neck Injury' },
+  { id: 's17', category: 'Trauma', name: 'Blunt Chest Trauma' },
+  { id: 's18', category: 'Trauma', name: 'Penetrating Chest Wound' },
+  { id: 's19', category: 'Trauma', name: 'Flail Chest / Paradoxical Movement' },
+  { id: 's20', category: 'Trauma', name: 'Subcutaneous Emphysema' },
+  { id: 's21', category: 'Trauma', name: 'Tracheal Deviation' },
+  { id: 's22', category: 'Trauma', name: 'Muffled Heart Sounds' },
+  { id: 's23', category: 'Trauma', name: 'Distended Neck Veins (Trauma)' },
+  { id: 's24', category: 'Trauma', name: 'Rib Fracture Tenderness' },
+  { id: 's25', category: 'Trauma', name: 'Blunt Abdominal Trauma' },
+  { id: 's26', category: 'Trauma', name: 'Penetrating Abdominal Wound' },
+  { id: 's27', category: 'Trauma', name: 'Abdominal Rigidity / Board-like Abdomen' },
+  { id: 's28', category: 'Trauma', name: 'Seatbelt Sign / Ecchymosis' },
+  { id: 's29', category: 'Trauma', name: 'Evisceration' },
+  { id: 's30', category: 'Trauma', name: 'Grey Turner\'s / Cullen\'s Sign' },
+  { id: 's31', category: 'Trauma', name: 'Back Pain (Post-Trauma)' },
+  { id: 's32', category: 'Trauma', name: 'Spinal Tenderness / Step Deformity' },
+  { id: 's33', category: 'Trauma', name: 'Loss of Sensation Below Injury Level' },
+  { id: 's34', category: 'Trauma', name: 'Limb Weakness / Paralysis (Post-Trauma)' },
+  { id: 's35', category: 'Trauma', name: 'Bladder / Bowel Incontinence (Post-Trauma)' },
+  { id: 's36', category: 'Trauma', name: 'Priapism (Spinal Injury)' },
+  { id: 's37', category: 'Trauma', name: 'Deformity / Angulation' },
+  { id: 's38', category: 'Trauma', name: 'Open Fracture' },
+  { id: 's39', category: 'Trauma', name: 'Closed Fracture / Swelling' },
+  { id: 's40', category: 'Trauma', name: 'Joint Dislocation' },
+  { id: 's41', category: 'Trauma', name: 'Absent / Diminished Distal Pulse' },
+  { id: 's42', category: 'Trauma', name: 'Compartment Syndrome (Pain out of Proportion)' },
+  { id: 's43', category: 'Trauma', name: 'Crush Injury' },
+  { id: 's44', category: 'Trauma', name: 'Degloving Injury' },
+  { id: 's45', category: 'Trauma', name: 'Amputation (Traumatic)' },
+  { id: 's46', category: 'Trauma', name: 'Blood at Urethral Meatus' },
+  { id: 's47', category: 'Trauma', name: 'Scrotal / Perineal Hematoma' },
+  { id: 's48', category: 'Trauma', name: 'Gross Hematuria (Post-Trauma)' },
+  { id: 's49', category: 'Trauma', name: 'Flank Ecchymosis / Renal Injury Signs' },
+  { id: 's50', category: 'Trauma', name: 'Active Hemorrhage / Pulsatile Bleeding' },
+  { id: 's51', category: 'Trauma', name: 'Expanding Hematoma' },
+  { id: 's52', category: 'Trauma', name: 'Cold / Pale Extremity (Vascular Injury)' },
+  { id: 's53', category: 'Trauma', name: 'Bruit / Thrill Over Vessel' },
+  { id: 's54', category: 'Trauma', name: 'Abrasion' },
+  { id: 's55', category: 'Trauma', name: 'Contusion / Bruise' },
+  { id: 's56', category: 'Trauma', name: 'Puncture Wound' },
+  { id: 's57', category: 'Trauma', name: 'Foreign Body (Retained)' },
+  { id: 's58', category: 'Trauma', name: 'Bite Wound (Animal/Human)' },
+  { id: 's59', category: 'Trauma', name: 'Chemical Burn' },
+  { id: 's60', category: 'Trauma', name: 'Electrical Burn' },
 
   // Hematology (Blood System)
   { id: 'h1', category: 'Hematology', name: 'Severe Pallor (Anemia)' },
@@ -123,20 +249,74 @@ const SYMPTOMS_DB = [
   // Neurology
   { id: 'n1', category: 'Neurology', name: 'Headache' },
   { id: 'n2', category: 'Neurology', name: 'Seizures / Convulsions' },
-  { id: 'n3', category: 'Neurology', name: 'Dizziness / Vertigo' },
+  { id: 'n3', category: 'Neurology', name: 'Dizziness' },
   { id: 'n4', category: 'Neurology', name: 'Altered Sensorium / Confusion' },
   { id: 'n5', category: 'Neurology', name: 'Numbness / Tingling (Paresthesia)' },
   { id: 'n6', category: 'Neurology', name: 'Tremors' },
   { id: 'n7', category: 'Neurology', name: 'Focal Motor Weakness (Hemiparesis)' },
+  { id: 'n8', category: 'Neurology', name: 'Vertigo' },
+  { id: 'n9', category: 'Neurology', name: 'Neck Rigidity' },
+
 
   // Cardiology & Respiratory
   { id: 'c1', category: 'Cardio-Respiratory', name: 'Chest Pain / Angina' },
   { id: 'c2', category: 'Cardio-Respiratory', name: 'Palpitations' },
   { id: 'c3', category: 'Cardio-Respiratory', name: 'Orthopnea / PND' },
-  { id: 'c4', category: 'Cardio-Respiratory', name: 'Cough (Dry/Productive)' },
+  { id: 'c4', category: 'Cardio-Respiratory', name: 'Cough (Productive)' },
   { id: 'c5', category: 'Cardio-Respiratory', name: 'Dyspnea / Breathlessness' },
   { id: 'c6', category: 'Cardio-Respiratory', name: 'Hemoptysis' },
   { id: 'c7', category: 'Cardio-Respiratory', name: 'Wheezing' },
+  { id: 'c8', category: 'Cardio-Respiratory', name: 'Chest Pressure' },
+  { id: 'c9', category: 'Cardio-Respiratory', name: 'Chest Tightness' },
+  { id: 'c10', category: 'Cardio-Respiratory', name: 'Exertional Dyspnea' },
+  { id: 'c11', category: 'Cardio-Respiratory', name: 'Paroxysmal Nocturnal Dyspnea' },
+  { id: 'c12', category: 'Cardio-Respiratory', name: 'Syncope' },
+  { id: 'c13', category: 'Cardio-Respiratory', name: 'Presyncope' },
+  { id: 'c14', category: 'Cardio-Respiratory', name: 'Dizziness' },
+  { id: 'c15', category: 'Cardio-Respiratory', name: 'Lightheadedness' },
+  { id: 'c16', category: 'Cardio-Respiratory', name: 'Fatigue' },
+  { id: 'c17', category: 'Cardio-Respiratory', name: 'Weakness' },
+  { id: 'c18', category: 'Cardio-Respiratory', name: 'Peripheral Edema' },
+  { id: 'c19', category: 'Cardio-Respiratory', name: 'Abdominal Swelling (Ascites)' },
+  { id: 'c20', category: 'Cardio-Respiratory', name: 'Cyanosis' },
+  { id: 'c21', category: 'Cardio-Respiratory', name: 'Claudication' },
+  { id: 'c22', category: 'Cardio-Respiratory', name: 'Nocturia' },
+  { id: 'c23', category: 'Cardio-Respiratory', name: 'Diaphoresis' },
+  { id: 'c24', category: 'Cardio-Respiratory', name: 'Nausea' },
+  { id: 'c25', category: 'Cardio-Respiratory', name: 'Anorexia' },
+  { id: 'c26', category: 'Cardio-Respiratory', name: 'Early Satiety' },
+  { id: 'c27', category: 'Cardio-Respiratory', name: 'Right Upper Quadrant Abdominal Pain' },
+  { id: 'c28', category: 'Cardio-Respiratory', name: 'Cardiac Cachexia' },
+  { id: 'c29', category: 'Cardio-Respiratory', name: 'Hoarseness' },
+  { id: 'c30', category: 'Cardio-Respiratory', name: 'Dry Cough' },
+  { id: 'c31', category: 'Cardio-Respiratory', name: 'Sputum Production (Expectoration)' },
+  { id: 'c32', category: 'Cardio-Respiratory', name: 'Platypnea' },
+  { id: 'c33', category: 'Cardio-Respiratory', name: 'Trepopnea' },
+  { id: 'c34', category: 'Cardio-Respiratory', name: 'Tachypnea' },
+  { id: 'c35', category: 'Cardio-Respiratory', name: 'Bradypnea' },
+  { id: 'c36', category: 'Cardio-Respiratory', name: 'Apnea' },
+  { id: 'c37', category: 'Cardio-Respiratory', name: 'Stridor' },
+  { id: 'c38', category: 'Cardio-Respiratory', name: 'Pleuritic Chest Pain' },
+  { id: 'c39', category: 'Cardio-Respiratory', name: 'Chest Heaviness' },
+  { id: 'c40', category: 'Cardio-Respiratory', name: 'Hypoxia-Related Confusion or Restlessness' },
+  { id: 'c41', category: 'Cardio-Respiratory', name: 'Use of Accessory Muscles of Respiration' },
+  { id: 'c42', category: 'Cardio-Respiratory', name: 'Nasal Flaring' },
+  { id: 'c43', category: 'Cardio-Respiratory', name: 'Grunting' },
+  { id: 'c44', category: 'Cardio-Respiratory', name: 'Hyperventilation' },
+  { id: 'c45', category: 'Cardio-Respiratory', name: 'Hypoventilation' },
+  { id: 'c46', category: 'Cardio-Respiratory', name: 'Snoring' },
+  { id: 'c47', category: 'Cardio-Respiratory', name: 'Daytime Somnolence' },
+  { id: 'c48', category: 'Cardio-Respiratory', name: 'Choking Sensation' },
+  { id: 'c49', category: 'Cardio-Respiratory', name: 'Rhinorrhea (Runny Nose)' },
+  { id: 'c50', category: 'Cardio-Respiratory', name: 'Nasal Congestion' },
+  { id: 'c51', category: 'Cardio-Respiratory', name: 'Sneezing' },
+  { id: 'c52', category: 'Cardio-Respiratory', name: 'Epistaxis (Nosebleed)' },
+  { id: 'c53', category: 'Cardio-Respiratory', name: 'Anosmia (Loss of Smell)' },
+  { id: 'c54', category: 'Cardio-Respiratory', name: 'Hyposmia (Decreased Smell)' },
+  { id: 'c55', category: 'Cardio-Respiratory', name: 'Postnasal Drip' },
+  { id: 'c56', category: 'Cardio-Respiratory', name: 'Sore Throat (Pharyngitis)' },
+  { id: 'c57', category: 'Cardio-Respiratory', name: 'Throat Clearing' },
+  { id: 'c58', category: 'Cardio-Respiratory', name: 'Digital Clubbing' },
 
   // Others (Endocrine, Urinary, Pediatrics, Ophthalmology)
   { id: 'en1', category: 'Endocrine', name: 'Polyuria' },
@@ -148,18 +328,29 @@ const SYMPTOMS_DB = [
   { id: 'p1', category: 'Pediatrics', name: 'Poor Feeding' },
   { id: 'p2', category: 'Pediatrics', name: 'Excessive Crying / Irritability' },
   { id: 'p3', category: 'Pediatrics', name: 'Delayed Milestones' },
+  { id: 'p4', category: 'Pediatrics', name: 'Newborn care/Neonatal care' },
   { id: 'op1', category: 'Ophthalmology', name: 'Blurred Vision' },
   { id: 'op2', category: 'Ophthalmology', name: 'Red Eye' },
   { id: 'op3', category: 'Ophthalmology', name: 'Photophobia' },
+
+  // Dermatology
+  { id: 'derm1', category: 'Dermatology', name: 'Pruritus (Itching)' },
+  { id: 'derm2', category: 'Dermatology', name: 'Maculopapular rash' },
+  { id: 'derm3', category: 'Dermatology', name: 'Erythema' },
+  { id: 'derm4', category: 'Dermatology', name: 'Vesicular lesions' },
+  { id: 'derm5', category: 'Dermatology', name: 'Skin peeling' },
+  { id: 'derm6', category: 'Dermatology', name: 'Nodules' },
 ];
 
 const CATEGORIES = [
   'All',
   'General Medicine',
+  'Infectious Disease',
   'OBG & Gynec',
   'ENT',
   'Oncology',
   'Surgery',
+  'Trauma',
   'Hematology',
   'Gastroenterology',
   'Neurology',
@@ -167,10 +358,12 @@ const CATEGORIES = [
   'Endocrine',
   'Urinary',
   'Pediatrics',
-  'Ophthalmology'
+  'Ophthalmology',
+  'Dermatology'
 ];
+
 const ROLES = [
-  { id: 'admin', label: 'Admin', username: 'admin', password: 'admin123', tabs: ['reception', 'nursing', 'doctor', 'lab', 'review', 'pharmacy','settings'] },
+  { id: 'admin', label: 'Admin', username: 'admin', password: 'ramesh123', tabs: ['reception', 'nursing', 'doctor', 'lab', 'review', 'pharmacy','settings'] },
   { id: 'reception', label: 'Reception', username: 'reception', password: 'reception123', tabs: ['reception'] },
   { id: 'nursing', label: 'Nursing Station', username: 'nurse', password: 'nurse123', tabs: ['nursing'] },
   { id: 'doctor', label: 'Doctor / MO', username: 'doctor', password: 'doctor123', tabs: ['doctor'] },
@@ -178,6 +371,16 @@ const ROLES = [
   { id: 'pharmacy', label: 'Pharmacy', username: 'pharmacy', password: 'pharmacy123', tabs: ['pharmacy'] },
 ];
 export default function MedFlowApp() {
+
+// Exam & Investigation Suggestion State
+  const [aiExamLoading, setAiExamLoading] = useState(false);
+  const [aiExamError, setAiExamError] = useState('');
+  const [examSuggestions, setExamSuggestions] = useState(null);
+  const [selectedNegativeHistory, setSelectedNegativeHistory] = useState([]);
+  const [selectedInvestigations, setSelectedInvestigations] = useState([]);
+  const [examValues, setExamValues] = useState({});
+  const [manualInvestigation, setManualInvestigation] = useState('');
+
   const [hospitalInfo, setHospitalInfo] = useState({
     name: "Community Health center,Dhunsol",
     address: "dhunsol, agathala highway, lakhani, State gujarat - 385360",
@@ -187,6 +390,113 @@ export default function MedFlowApp() {
   const updateHospitalInfo = (field, value) => {
     setHospitalInfo(prev => ({ ...prev, [field]: value }));
   };
+  const runExamSuggestionEngine = async () => {
+    if (selectedSymptoms.length === 0 && !manualHistory) return;
+    setAiExamLoading(true);
+    setAiExamError('');
+    setExamSuggestions(null);
+
+    const symNames = selectedSymptoms.map(s => {
+      const d = symptomDurations[s.id];
+      return d && d.num ? `${s.name} (x ${d.num} ${d.unit})` : s.name;
+    }).join(', ');
+
+    const examPromptText = `
+You are an expert Consultant Physician AI. Based on the patient data below, suggest
+relevant clinical documentation to help the doctor complete a thorough workup.
+
+Patient Profile: ${activePatient?.age}, ${activePatient?.gender}.
+Chief Complaint: ${activePatient?.complaint}.
+Selected Clinical Findings & Symptoms: ${symNames || 'None selected'}.
+Doctor's Manual History: ${manualHistory || 'Not provided'}.
+
+Suggest:
+1. "negativeHistory" - relevant negative history points a doctor should ask/document to rule out differentials (e.g. "Denies hemoptysis", "No history of trauma").
+2. "investigations" - standard relevant investigations to order for this presentation.
+3. "generalExamination" - relevant general examination parameters to check, each with its normal reference value/range.
+4. "systemicExamination" - relevant systemic examination parameters to check, each with its normal reference value/range.
+
+Return 4-8 items per category, kept concise and clinically relevant to the case above.
+
+You MUST return your response as a valid JSON object matching exactly this schema (no markdown ticks):
+{
+  "negativeHistory": ["...", "..."],
+  "investigations": ["...", "..."],
+  "generalExamination": [{"name": "Pallor", "normalRange": "Absent"}],
+  "systemicExamination": [{"name": "CVS - S1S2", "normalRange": "Normal, no murmurs"}]
+}
+`;
+
+    try {
+      const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization':  'Bearer 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'
+        },
+        body: JSON.stringify({
+          model: 'llama-3.3-70b-versatile',
+          response_format: { type: 'json_object' },
+          messages: [
+            { role: 'system', content: 'You are an expert clinical assistant. Always respond with valid JSON only.' },
+            { role: 'user', content: examPromptText }
+          ],
+        }),
+      });
+
+      if (!response.ok) {
+        setAiExamError(`Server error: ${response.status} ${response.statusText}`);
+        setAiExamLoading(false);
+        return;
+      }
+
+      const data = await response.json();
+      const resultText = data.choices?.[0]?.message?.content;
+
+      if (resultText) {
+        const parsed = JSON.parse(resultText);
+        setExamSuggestions(parsed);
+      } else {
+        setAiExamError('AI Engine returned an empty response.');
+      }
+    } catch (error) {
+      console.error("Grok API Error:", error);
+      setAiExamError('Failed to fetch exam suggestions. Please try again.');
+    } finally {
+      setAiExamLoading(false);
+    }
+  };
+
+// Helper toggles for negative history / investigations (checkbox-style selection)
+  const toggleNegativeHistory = (item) => {
+    setSelectedNegativeHistory(prev =>
+        prev.includes(item) ? prev.filter(i => i !== item) : [...prev, item]
+    );
+  };
+
+  const toggleInvestigation = (item) => {
+    setSelectedInvestigations(prev =>
+        prev.includes(item) ? prev.filter(i => i !== item) : [...prev, item]
+    );
+  };
+
+  const addManualInvestigation = () => {
+    const val = manualInvestigation.trim();
+    if (!val) return;
+    if (!selectedInvestigations.includes(val)) {
+      setSelectedInvestigations(prev => [...prev, val]);
+    }
+    setManualInvestigation('');
+  };
+
+  const removeInvestigation = (item) => {
+    setSelectedInvestigations(prev => prev.filter(i => i !== item));
+  };
+
+  const setExamValue = (name, value) => {
+    setExamValues(prev => ({ ...prev, [name]: value }));
+  };
+
   const LAB_TEST_PARAMS = {
     "Complete Blood Count (CBC)": [
       { name: "Hemoglobin (Hb)", ref: "12-16 g/dL (F), 13-17 g/dL (M)" },
@@ -239,13 +549,21 @@ export default function MedFlowApp() {
     );
     return found ? LAB_TEST_PARAMS[found] : [{ name: testName, ref: "" }];
   };
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [currentRole, setCurrentRole] = useState(null);
+  const [isLoggedIn, setIsLoggedIn] = useState(() => {
+    return localStorage.getItem('medflow_loggedIn') === 'true';
+  });
+  const [currentRole, setCurrentRole] = useState(() => {
+    const saved = localStorage.getItem('medflow_role');
+    return saved ? JSON.parse(saved) : null;
+  });
   const [loginUsername, setLoginUsername] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
   const [loginError, setLoginError] = useState("");
   const [activeTab, setActiveTab] = useState('reception');
-  const [patients, setPatients] = useState(INITIAL_PATIENTS);
+  const [patients, setPatients] = useState(() => {
+    const saved = localStorage.getItem('medflow_patients');
+    return saved ? JSON.parse(saved) : INITIAL_PATIENTS;
+  });
 
   // Reception Modal State
   const [showAddPatientModal, setShowAddPatientModal] = useState(false);
@@ -255,6 +573,7 @@ export default function MedFlowApp() {
   const [newPatientTriage, setNewPatientTriage] = useState('GREEN');
   const [newPatientComplaint, setNewPatientComplaint] = useState('');
   const [followUpUhid, setFollowUpUhid] = useState("");
+  const [newPatientAddress, setNewPatientAddress] = useState('');
 
   // Nursing Station Vitals Input State
   const [vitalInputs, setVitalInputs] = useState({});
@@ -264,12 +583,19 @@ export default function MedFlowApp() {
   const [consultStep, setConsultStep] = useState('history');
 
   // Symptoms & AI Diagnosis State
+  const [symptomSearch, setSymptomSearch] = useState('');
   const [selectedSymptoms, setSelectedSymptoms] = useState([]);
   const [symptomFilter, setSymptomFilter] = useState('All');
   const [aiLoading, setAiLoading] = useState(false);
   const [aiResult, setAiResult] = useState(null);
   const [aiError, setAiError] = useState('');
   const [selectedDdx, setSelectedDdx] = useState([]);
+  const [selectedAiLabs, setSelectedAiLabs] = useState([]);
+
+// Manual History & Duration Tracking State
+  const [manualHistory, setManualHistory] = useState('');
+  const [symptomDurations, setSymptomDurations] = useState({});
+  const [openDurationFor, setOpenDurationFor] = useState(null);
 
   // Prescription State
   const [acceptedDiagnosis, setAcceptedDiagnosis] = useState([]);
@@ -320,28 +646,35 @@ export default function MedFlowApp() {
   const [newMedName, setNewMedName] = useState("");
   const [newMedStock, setNewMedStock] = useState("");
 
-  const activePatient = patients.find(p => p.id === selectedPatientId);
-
   useEffect(() => {
-    // Reset or restore doctor pane state when active patient changes
+    localStorage.setItem('medflow_patients', JSON.stringify(patients));
+  }, [patients]);
+  const activePatient = patients.find(p => p.id === selectedPatientId);
+  useEffect(() => {
     if (activePatient?.savedSymptoms) {
       setSelectedSymptoms(activePatient.savedSymptoms);
+      setSelectedNegativeHistory(activePatient.savedNegativeHistory || []);
+      setSelectedInvestigations(activePatient.savedInvestigations || []);
+      setExamValues(activePatient.savedExamValues || {});
       setAiResult(activePatient.savedAiResult || null);
       setSelectedDdx(activePatient.savedSelectedDdx || []);
-      setConsultStep('diagnosis');
+      setConsultStep('findings')
     } else {
-      setConsultStep('history');
       setSelectedSymptoms([]);
+      setSelectedNegativeHistory([]);
+      setSelectedInvestigations([]);
+      setExamValues({});
       setAiResult(null);
       setSelectedDdx([]);
+      setConsultStep('history');
     }
-    setAiError('');
-    setAcceptedDiagnosis([]);
-    setPrescriptions([]);
-    setAiRxError('');
+    setAiExamError('');
+    setManualHistory('');
+    setExamSuggestions(null);
+    setAiExamLoading(false);
   }, [selectedPatientId]);
 
-  // Make sure we have a selected patient if navigating to doctor tab
+// Make sure we have a selected patient if navigating to doctor tab
   useEffect(() => {
     if (activeTab === 'doctor' && !selectedPatientId) {
       const firstDocPt = patients.find(p => p.status === 'Doctor');
@@ -395,6 +728,7 @@ export default function MedFlowApp() {
         setNewPatientName('');
         setNewPatientAge('');
         setNewPatientComplaint('');
+        setNewPatientAddress('');
         setShowAddPatientModal(false);
         return;
       } else {
@@ -414,12 +748,14 @@ export default function MedFlowApp() {
       triage: newPatientTriage,
       status: 'Nursing',
       complaint: newPatientComplaint || 'General consultation',
+      address: newPatientAddress || '',
       vitals: null,
     };
     setPatients([newPt, ...patients]);
     setNewPatientName('');
     setNewPatientAge('');
     setNewPatientComplaint('');
+    setNewPatientAddress('');
     setShowAddPatientModal(false);
   };
 
@@ -454,22 +790,54 @@ export default function MedFlowApp() {
     }
   };
 
+  const DURATION_UNITS = ['Days', 'Weeks', 'Months', 'Years'];
+
+  const setDuration = (symptomId, num, unit) => {
+    setSymptomDurations(prev => ({ ...prev, [symptomId]: { num, unit } }));
+  };
+
+  const clearDuration = (symptomId) => {
+    setSymptomDurations(prev => {
+      const next = { ...prev };
+      delete next[symptomId];
+      return next;
+    });
+  };
+
   const runAIEngine = async () => {
     if (selectedSymptoms.length === 0) return;
     setAiLoading(true);
     setAiError('');
     setAiResult(null);
 
-    const symNames = selectedSymptoms.map(s => s.name).join(', ');
+    const symNames = selectedSymptoms.map(s => {
+      const d = symptomDurations[s.id];
+      return d && d.num ? `${s.name} (x ${d.num} ${d.unit})` : s.name;
+    }).join(', ');
     const promptText = `
       You are an expert Consultant Physician AI referencing standard medical textbooks (e.g., Harrison's Principles of Internal Medicine, Bailey & Love's Short Practice of Surgery, Williams Obstetrics).
       
       Patient Profile: ${activePatient?.age}, ${activePatient?.gender}.
       Chief Complaint: ${activePatient?.complaint}.
       Selected Clinical Findings & Symptoms: ${symNames}.
-      ${activePatient?.labResults ? `Lab Investigation Results: ${activePatient.labResults}.` : ''}
+Doctor's Manual History: ${manualHistory || 'Not provided'}.
+Negative History: ${selectedNegativeHistory.join(', ') || 'None confirmed'}.
+Investigations Ordered: ${selectedInvestigations.join(', ') || 'None selected'}.
+General Examination Findings: ${
+        Object.entries(examValues)
+            .filter(([name]) => examSuggestions?.generalExamination?.some(p => p.name === name))
+            .map(([name, val]) => `${name}: ${val}`)
+            .join(', ') || 'Not documented'
+    }.
+Systemic Examination Findings: ${
+        Object.entries(examValues)
+            .filter(([name]) => examSuggestions?.systemicExamination?.some(p => p.name === name))
+            .map(([name, val]) => `${name}: ${val}`)
+            .join(', ') || 'Not documented'
+    }.
+${activePatient?.labResults ? `Lab Investigation Results: ${activePatient.labResults}.` : ''}
       
-      Based on the above and standard textbook medicine, provide a highly accurate differential diagnosis (top 3-4 conditions) and suggest standard laboratory/radiological investigations or gold-standard diagnostic procedures.
+Based on the complete patient summary above (symptoms, manual history, negative history, examination findings, and investigations), and standard modern medicine textbook provide a highly accurate Provisional Differential Diagnosis (top 3-4 conditions, ranked by likelihood) and suggest any additional standard laboratory/radiological investigations not already ordered.
       
       You MUST return your response as a valid JSON object matching exactly this schema (do not include markdown block ticks around it):
       {
@@ -540,14 +908,47 @@ export default function MedFlowApp() {
         setSelectedDdx([...selectedDdx, diagnosis]);
       }
     };
+
+  const toggleAiLab = (lab) => {
+    setSelectedAiLabs(prev =>
+        prev.includes(lab) ? prev.filter(l => l !== lab) : [...prev, lab]
+    );
+  };
+
+  const sendDiagnosisLabsToLab = () => {
+    if (!activePatient || selectedAiLabs.length === 0) return;
+    const mergedInvestigations = Array.from(new Set([...selectedInvestigations, ...selectedAiLabs]));
+    setPatients(patients.map(p =>
+        p.id === activePatient.id
+            ? {
+              ...p,
+              status: 'Doctor',
+              labStatus: 'Pending',
+              investigationsOrdered: mergedInvestigations,
+              savedNegativeHistory: selectedNegativeHistory || [],
+              savedInvestigations: mergedInvestigations,
+              savedExamValues: examValues || {},
+              savedSymptoms: selectedSymptoms,
+              savedAiResult: aiResult,
+              savedSelectedDdx: selectedDdx,
+            }
+            : p
+    ));
+    setSelectedPatientId(null);
+  };
+
   const sendToLab = () => {
     if (!activePatient) return;
     setPatients(patients.map(p =>
         p.id === activePatient.id
             ? {
               ...p,
-              status: 'Laboratory',
-              investigationsOrdered: aiResult?.labs || [],
+              status: 'Doctor', // દર્દી ડૉક્ટર પેનલમાં જ રહેશે
+              labStatus: 'Pending', // લેબ વાળા માટે નવું સ્ટેટસ
+              investigationsOrdered: selectedInvestigations || [],
+              savedNegativeHistory: selectedNegativeHistory || [],
+              savedInvestigations: selectedInvestigations || [],
+              savedExamValues: examValues || {},
               savedSymptoms: selectedSymptoms,
               savedAiResult: aiResult,
               savedSelectedDdx: selectedDdx,
@@ -560,7 +961,12 @@ export default function MedFlowApp() {
   const saveLabResults = (patientId, resultsText) => {
     setPatients(patients.map(p =>
         p.id === patientId
-            ? { ...p, labResults: resultsText, status: 'Doctor' }
+            ? {
+              ...p,
+              labResults: resultsText,
+              status: 'Doctor',
+              labStatus: 'Completed' // આનાથી દર્દી લેબમાંથી ક્લિયર થઈ જશે
+            }
             : p
     ));
   };
@@ -705,59 +1111,93 @@ export default function MedFlowApp() {
     setNewMedStock("");
   };
 
-  const printPrescription = (patient) => {
-    const printWindow = window.open('', '_blank');
-    const medsHtml = (patient.prescriptions || []).map(m =>
-        `<tr>
-      <td style="padding:8px;border-bottom:1px solid #ddd;">${m.name}</td>
-      <td style="padding:8px;border-bottom:1px solid #ddd;">${m.dosage}</td>
-      <td style="padding:8px;border-bottom:1px solid #ddd;">${m.duration}</td>
-      <td style="padding:8px;border-bottom:1px solid #ddd;">${m.note || '-'}</td>
-    </tr>`
-    ).join('');
+    const printPrescription = (patient) => {
+      const medsHtml = (patient.prescriptions || []).map(m => `
+        <tr>
+            <td style="padding:8px;border-bottom:1px solid #ddd;">${m.name}</td>
+            <td style="padding:8px;border-bottom:1px solid #ddd;">${m.dosage}</td>
+            <td style="padding:8px;border-bottom:1px solid #ddd;">${m.duration}</td>
+            <td style="padding:8px;border-bottom:1px solid #ddd;">${m.note || '-'}</td>
+        </tr>
+    `).join('');
 
-    printWindow.document.write(`
-    <html>
-      <head><title>Prescription - ${patient.name}</title></head>
-      <body style="font-family: Arial, sans-serif; padding: 30px;">
-        <div style="text-align:center; border-bottom:2px solid #333; padding-bottom:10px; margin-bottom:20px;">
-  <h2 style="margin:0;">${hospitalInfo.name}</h2>
-  <p style="margin:2px 0; font-size:13px;">${hospitalInfo.address}</p>
-  <p style="margin:2px 0; font-size:13px;">${hospitalInfo.doctorName} &nbsp;|&nbsp; Contact: ${hospitalInfo.contact}</p>
-</div>
-        <p><b>Patient:</b> ${patient.name} &nbsp;&nbsp; <b>Age/Sex:</b> ${patient.age}y / ${patient.gender}</p>
-        <p><b>Diagnosis:</b> ${(patient.diagnoses || []).join(', ')}</p>
-        <table style="width:100%;border-collapse:collapse;margin-top:20px;">
-          <thead>
-            <tr style="background:#eee;text-align:left;">
-              <th style="padding:8px;">Medicine</th>
-              <th style="padding:8px;">Dosage</th>
-              <th style="padding:8px;">Duration</th>
-              <th style="padding:8px;">Note</th>
-            </tr>
-          </thead>
-          <tbody>${medsHtml}</tbody>
-        </table>
-        <br/><br/>
-        <p style="text-align:right;">Doctor's Signature: ____________________</p>
-      </body>
-    </html>
-  `);
-    printWindow.document.close();
-    printWindow.print();
-  };
+      // ડેટાને સુરક્ષિત રીતે ફોર્મેટ કરવા માટેના વેરિયેબલ્સ
+      const symptomsStr = (patient.savedSymptoms && patient.savedSymptoms.length > 0)
+          ? patient.savedSymptoms.map(s => s.name).join(', ')
+          : 'N/A';
 
+      const negHistoryStr = (patient.savedNegativeHistory && patient.savedNegativeHistory.length > 0)
+          ? patient.savedNegativeHistory.join(', ')
+          : 'None';
+
+      const examsStr = patient.savedExamValues
+          ? Object.entries(patient.savedExamValues).map(([k, v]) => k + ': ' + v).join(', ')
+          : 'Normal';
+
+      const diagStr = (patient.diagnoses && patient.diagnoses.length > 0)
+          ? patient.diagnoses.join(', ')
+          : 'N/A';
+
+      const printWindow = window.open('', '_blank');
+      printWindow.document.write(`
+        <html>
+        <head><title>Prescription - ${patient.name}</title></head>
+        <body style="font-family: Arial, sans-serif; padding: 30px;">
+            <div style="text-align: center; border-bottom: 2px solid #333; padding-bottom: 10px; margin-bottom: 20px;">
+                <h2 style="margin:0;">${hospitalInfo.name}</h2>
+                <p style="margin:2px 0; font-size:13px;">${hospitalInfo.address}</p>
+                <p style="margin:2px 0; font-size:13px;">${hospitalInfo.doctorName} &nbsp;|&nbsp; Contact: ${hospitalInfo.contact}</p>
+            </div>
+            
+            <p style="text-align: left;"><b>Patient:</b> ${patient.name}&nbsp;&nbsp;|&nbsp;&nbsp;<b>Age/Sex:</b> ${patient.age} / ${patient.gender}</p>
+            <hr style="border: 0; border-top: 1px solid #eee; margin: 15px 0;">
+            
+            <div style="margin-bottom: 20px; text-align: left;">
+                <h4 style="margin:0 0 5px 0; color:#333;">CLINICAL SUMMARY</h4>
+                <p style="margin:2px 0; font-size:14px;"><b>Chief Complaint:</b> ${patient.complaint || 'N/A'}</p>
+                <p style="margin:2px 0; font-size:14px;"><b>Symptoms:</b> ${symptomsStr}</p>
+                <p style="margin:2px 0; font-size:14px;"><b>Negative History:</b> ${negHistoryStr}</p>
+                <p style="margin:2px 0; font-size:14px;"><b>Examinations:</b> ${examsStr}</p>
+                <p style="margin:2px 0; font-size:14px;"><b>Lab Results:</b> ${patient.labResults || 'Pending / None'}</p>
+            </div>
+
+            <div style="margin-bottom: 20px; text-align: left;">
+                <h4 style="margin:0 0 5px 0; color:#333;">DIAGNOSIS</h4>
+                <p style="margin:2px 0; font-size:14px; font-weight:bold;">${diagStr}</p>
+            </div>
+            
+            <h4 style="margin:0 0 10px 0; color:#333; text-align: left;">PRESCRIPTION (Rx)</h4>
+            <table style="width:100%; border-collapse:collapse; margin-top:20px;">
+                <thead>
+                    <tr style="background:#eee; text-align:left;">
+                        <th style="padding:8px;">Medicine</th>
+                        <th style="padding:8px;">Dosage</th>
+                        <th style="padding:8px;">Duration</th>
+                        <th style="padding:8px;">Note</th>
+                    </tr>
+                </thead>
+                <tbody>${medsHtml}</tbody>
+            </table>
+            <br/><br/>
+            <p style="text-align:right;">Doctor's Signature: ___________________</p>
+        </body>
+        </html>
+    `);
+      printWindow.document.close();
+      printWindow.print();
+    };
   const handleLogin = (e) => {
     e.preventDefault();
-    const role = ROLES.find(r =>
-        r.username.toLowerCase() === loginUsername.trim().toLowerCase() &&
-        r.password === loginPassword
+    const role = ROLES.find(
+        r => r.username === loginUsername && r.password === loginPassword
     );
     if (role) {
       setCurrentRole(role);
       setIsLoggedIn(true);
       setLoginError("");
       setActiveTab(role.tabs[0]);
+      localStorage.setItem('medflow_loggedIn', 'true');
+      localStorage.setItem('medflow_role', JSON.stringify(role));
     } else {
       setLoginError("Invalid username or password");
     }
@@ -768,6 +1208,8 @@ export default function MedFlowApp() {
     setCurrentRole(null);
     setLoginUsername("");
     setLoginPassword("");
+    localStorage.removeItem('medflow_loggedIn');
+    localStorage.removeItem('medflow_role');
   };
     const SidebarItem = ({icon: Icon, label, id, step}) => (
         <button onClick={() => setActiveTab(id)}
@@ -842,14 +1284,11 @@ export default function MedFlowApp() {
               {currentRole?.tabs.includes('lab') && (
                   <SidebarItem step="4" icon={FlaskConical} label="Laboratory" id="lab"/>
               )}
-              {currentRole?.tabs.includes('review') && (
-                  <SidebarItem step="5" icon={ClipboardCheck} label="Final Review" id="review"/>
-              )}
               {currentRole?.tabs.includes('pharmacy') && (
-                  <SidebarItem step="6" icon={Pill} label="Pharmacy" id="pharmacy"/>
+                  <SidebarItem step="5" icon={Pill} label="Pharmacy" id="pharmacy"/>
               )}
               {currentRole?.tabs.includes('settings') && (
-                  <SidebarItem step="7" icon={Settings} label="Settings" id="settings"/>
+                  <SidebarItem step="6" icon={Settings} label="Settings" id="settings"/>
               )}
             </div>
             <div className="p-4 border-t border-slate-700 mt-auto">
@@ -909,6 +1348,7 @@ export default function MedFlowApp() {
                           <th className="p-4">Patient Name</th>
                           <th className="p-4">Age / Gender</th>
                           <th className="p-4">Chief Complaint</th>
+                          <th className="p-4">Address</th>
                           <th className="p-4">Triage</th>
                           <th className="p-4">Current Status</th>
                         </tr>
@@ -921,6 +1361,7 @@ export default function MedFlowApp() {
                               <td className="p-4 whitespace-nowrap">{p.age} / <span
                                   className="capitalize">{p.gender}</span></td>
                               <td className="p-4 text-gray-600 max-w-[200px] truncate">{p.complaint}</td>
+                              <td className="p-4 text-gray-600 max-w-[200px] truncate">{p.address || '-'}</td>
                               <td className="p-4">
                           <span className={`text-[10px] font-bold px-2 py-1 rounded-full whitespace-nowrap ${
                               p.triage === 'RED' ? 'bg-red-100 text-red-700 border border-red-200' :
@@ -1034,6 +1475,18 @@ export default function MedFlowApp() {
                                   <option value="YELLOW">YELLOW - Urgent</option>
                                   <option value="RED">RED - Emergency</option>
                                 </select>
+                              </div>
+
+                              <div>
+                                <label
+                                    className="block text-xs font-semibold text-gray-700 mb-1.5 uppercase tracking-wide">Address</label>
+                                <input
+                                    type="text"
+                                    value={newPatientAddress}
+                                    onChange={e => setNewPatientAddress(e.target.value)}
+                                    placeholder="e.g., Village, Taluka, District"
+                                    className="w-full border border-gray-300 rounded-lg px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
+                                />
                               </div>
 
                               <div>
@@ -1259,30 +1712,41 @@ export default function MedFlowApp() {
                             </div>
 
                             {/* Stepper Navigation */}
-                            <div className="bg-white rounded-xl border shadow-sm p-2 flex flex-col gap-1 flex-shrink-0">
+                            <div className="bg-white rounded-xl border shadow-sm p-5 flex-shrink-0">
                               {[
-                                {id: 'history', label: '1. History & Symptoms', icon: ClipboardCheck},
-                                {id: 'diagnosis', label: '2. AI Diagnosis', icon: BrainCircuit},
-                                {id: 'plan', label: '3. Treatment Plan', icon: Pill}
-                              ].map((step) => (
-                                  <button
-                                      key={step.id}
-                                      onClick={() => setConsultStep(step.id)}
-                                      className={`w-full text-left px-4 py-3 rounded-lg flex items-center justify-between transition-colors ${
-                                          consultStep === step.id
-                                              ? 'bg-indigo-50 text-indigo-700 font-semibold'
-                                              : 'text-gray-600 hover:bg-gray-50'
-                                      }`}
-                                  >
-                                    <div className="flex items-center gap-3">
-                                      <step.icon size={18}
-                                                 className={consultStep === step.id ? 'text-indigo-600' : 'text-gray-400'}/>
-                                      <span className="text-sm">{step.label}</span>
+                                { id: 'history',   label: 'History & Symptoms',     icon: ClipboardCheck },
+                                { id: 'exams',     label: 'Exams & Investigations', icon: FlaskConical },
+                                { id: 'findings',  label: 'Findings & Summary',      icon: FileText },
+                                { id: 'diagnosis', label: 'Provisional Diagnosis',   icon: Stethoscope },
+                                { id: 'plan',      label: 'Treatment Plan',          icon: Pill },
+                              ].map((step, idx, arr) => {
+                                const isActive = consultStep === step.id;
+                                const isLast = idx === arr.length - 1;
+                                return (
+                                    <div key={step.id} className="flex flex-col">
+                                      <button
+                                          onClick={() => setConsultStep(step.id)}
+                                          className="flex items-center gap-3 text-left py-1 w-full"
+                                      >
+                                        <div className={`w-9 h-9 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${
+                                            isActive ? 'border-indigo-600 text-indigo-600 bg-indigo-50' : 'border-gray-300 text-gray-400 bg-white'
+                                        }`}>
+                                          <step.icon size={16}/>
+                                        </div>
+                                        <span className={`text-sm ${isActive ? 'font-bold text-gray-900' : 'text-gray-400'}`}>
+            {step.label}
+          </span>
+                                      </button>
+                                      {!isLast && (
+                                          <div className="w-9 flex justify-center">
+                                            <div className="w-px h-6 bg-gray-200"/>
+                                          </div>
+                                      )}
                                     </div>
-                                    {consultStep === step.id && <ChevronRight size={16}/>}
-                                  </button>
-                              ))}
+                                );
+                              })}
                             </div>
+
                           </div>
 
                           {/* Right Column: Dynamic Content Area */}
@@ -1292,24 +1756,17 @@ export default function MedFlowApp() {
                             {/* --- STEP 1: History & Symptoms --- */}
                             {consultStep === 'history' && (
                                 <>
-                                  <div className="p-4 border-b flex justify-between items-center bg-gray-50">
-                                    <div>
-                                      <h3 className="font-bold text-gray-900 text-lg">Clinical Findings</h3>
-                                      <p className="text-xs text-gray-500">Select observed symptoms to analyze.</p>
-                                    </div>
-                                    {selectedSymptoms.length > 0 && (
-                                        <button
-                                            onClick={runAIEngine}
-                                            disabled={aiLoading}
-                                            className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 hover:shadow-md transition-all disabled:opacity-70 disabled:cursor-not-allowed"
-                                        >
-                                          {aiLoading ? (
-                                              <><Activity size={16} className="animate-spin"/> Analyzing...</>
-                                          ) : (
-                                              <><Sparkles size={16}/> Run AI Assistant</>
-                                          )}
-                                        </button>
-                                    )}
+                                  <div className="p-4 border-b bg-gray-50">
+                                    <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">
+                                      Manual History & Symptoms
+                                    </label>
+                                    <textarea
+                                        value={manualHistory}
+                                        onChange={(e) => setManualHistory(e.target.value)}
+                                        placeholder='e.g. "Fever x 3 days, low grade, no chills. Worsening cough since yesterday."'
+                                        rows={3}
+                                        className="w-full border border-gray-300 rounded-lg p-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                                    />
                                   </div>
 
                                   <div className="flex border-b overflow-x-auto p-2 bg-gray-50 gap-2 hide-scrollbar">
@@ -1331,29 +1788,72 @@ export default function MedFlowApp() {
                                   <div className="flex-1 overflow-y-auto p-5">
                                     {selectedSymptoms.length > 0 && (
                                         <div className="mb-6">
-                                          <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Selected
-                                            Symptoms</h4>
+                                          <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Selected Symptoms</h4>
                                           <div className="flex flex-wrap gap-2">
-                                            {selectedSymptoms.map(sym => (
-                                                <span key={sym.id}
-                                                      className="bg-indigo-100 text-indigo-700 border border-indigo-200 px-3 py-1.5 rounded-full text-sm font-medium flex items-center gap-2">
-                                    {sym.name}
-                                                  <button onClick={() => toggleSymptom(sym)}
-                                                          className="text-indigo-400 hover:text-indigo-800">
-                                      &times;
+                                            {selectedSymptoms.map(sym => {
+                                              const duration = symptomDurations[sym.id];
+                                              const isOpen = openDurationFor === sym.id;
+                                              return (
+                                                  <span key={sym.id} className="inline-flex items-center gap-1 bg-indigo-100 text-indigo-700 border border-indigo-200 px-3 py-1.5 rounded-full text-sm">
+                              {sym.name}
+                                                    <button
+                                                        onClick={() => setOpenDurationFor(isOpen ? null : sym.id)}
+                                                        className="ml-1 text-xs px-2 py-0.5 rounded-full border border-dashed border-indigo-300 text-indigo-500 hover:border-indigo-500 hover:text-indigo-800"
+                                                    >
+                                {duration?.num ? `${duration.num} ${duration.unit}` : '+ duration'}
+                              </button>
+                                                    {isOpen && (
+                                                        <span className="flex items-center gap-1 bg-white border border-indigo-200 rounded-lg px-2 py-1 ml-1">
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        defaultValue={duration?.num ?? ''}
+                                        className="w-12 text-sm border border-gray-300 rounded px-1"
+                                        onChange={(e) => setDuration(sym.id, e.target.value, duration?.unit || 'Days')}
+                                        autoFocus
+                                    />
+                                    <select
+                                        value={duration?.unit || 'Days'}
+                                        className="text-sm border border-gray-300 rounded px-1"
+                                        onChange={(e) => setDuration(sym.id, duration?.num || '', e.target.value)}
+                                    >
+                                      {DURATION_UNITS.map(u => <option key={u} value={u}>{u}</option>)}
+                                    </select>
+                                    <button
+                                        onClick={() => setOpenDurationFor(null)}
+                                        className="text-xs text-gray-400 hover:text-gray-700 px-1"
+                                    >
+                                      &#10003;
                                     </button>
                                   </span>
-                                            ))}
+                                                    )}
+                                                    <button onClick={() => toggleSymptom(sym)} className="text-indigo-400 hover:text-indigo-800">
+                                &times;
+                              </button>
+                            </span>
+                                              );
+                                            })}
                                           </div>
                                         </div>
                                     )}
 
-                                    <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Available
-                                      Symptoms</h4>
+                                    <input
+                                        type="text"
+                                        value={symptomSearch}
+                                        onChange={(e) => setSymptomSearch(e.target.value)}
+                                        placeholder="Search symptoms across all categories..."
+                                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mb-3 focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                                    />
+
+                                    <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Available Symptoms</h4>
                                     <div className="flex flex-wrap gap-2">
                                       {SYMPTOMS_DB
-                                          .filter(s => symptomFilter === 'All' || s.category === symptomFilter)
-                                          .map(sym => {
+                                          .filter(s => {
+                                            const matchesCategory = symptomFilter === 'All' || s.category === symptomFilter;
+                                            const matchesSearch = symptomSearch.trim() === '' ||
+                                                s.name.toLowerCase().includes(symptomSearch.toLowerCase());
+                                            return matchesCategory && matchesSearch;
+                                          }).map(sym => {
                                             const isSelected = selectedSymptoms.find(s => s.id === sym.id);
                                             return (
                                                 <button
@@ -1371,147 +1871,418 @@ export default function MedFlowApp() {
                                           })}
                                     </div>
                                   </div>
+
+                                  <div className="p-4 bg-white border-t flex justify-end">
+                                    <button
+                                        onClick={() => setConsultStep('exams')}
+                                        className="bg-indigo-600 text-white px-6 py-2.5 rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-indigo-700 transition-all shadow-sm"
+                                    >
+                                      Next: Exams & Investigations <ArrowRight size={16}/>
+                                    </button>
+                                  </div>
                                 </>
                             )}
 
-                            {/* --- STEP 2: AI Diagnosis --- */}
+                            {/* --- STEP 2: Exams & Investigations --- */}
+                            {consultStep === 'exams' && (
+                                <div className="flex-1 flex flex-col overflow-hidden">
+                                  <div className="p-4 border-b bg-gray-50 flex justify-between items-center">
+                                    <div>
+                                      <h3 className="font-bold text-gray-900 text-lg">Exams & Investigations</h3>
+                                      <p className="text-xs text-gray-500">Get AI suggestions, then confirm what applies.</p>
+                                    </div>
+                                    <button
+                                        onClick={runExamSuggestionEngine}
+                                        disabled={aiExamLoading}
+                                        className="bg-white border border-indigo-300 text-indigo-700 px-4 py-2 rounded-lg text-sm font-medium hover:bg-indigo-50 disabled:opacity-50 flex items-center gap-2"
+                                    >
+                                      <Sparkles size={16}/> {aiExamLoading ? 'Suggesting...' : 'Suggest Examination & Investigations'}
+                                    </button>
+                                  </div>
+
+                                  <div className="flex-1 overflow-y-auto p-5 space-y-6">
+                                    {aiExamError && (
+                                        <p className="text-sm text-red-600">{aiExamError}</p>
+                                    )}
+
+                                    {!examSuggestions && !aiExamLoading && (
+                                        <div className="flex flex-col items-center justify-center text-gray-400 py-10 space-y-3">
+                                          <FlaskConical size={32} className="opacity-50"/>
+                                          <p className="text-sm">Run the suggestion engine above to get started.</p>
+                                        </div>
+                                    )}
+
+                                    {examSuggestions?.negativeHistory?.length > 0 && (
+                                        <div>
+                                          <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">
+                                            Negative History (tap to confirm)
+                                          </h4>
+                                          <div className="flex flex-wrap gap-2">
+                                            {examSuggestions.negativeHistory.map((item, i) => {
+                                              const isChecked = selectedNegativeHistory.includes(item);
+                                              return (
+                                                  <button
+                                                      key={i}
+                                                      onClick={() => toggleNegativeHistory(item)}
+                                                      className={`px-3 py-1.5 rounded-full text-sm border ${
+                                                          isChecked
+                                                              ? 'bg-green-100 text-green-800 border-green-300'
+                                                              : 'bg-white text-gray-600 border-gray-300 hover:border-green-300'
+                                                      }`}
+                                                  >
+                                                    {isChecked ? '✓ ' : ''}{item}
+                                                  </button>
+                                              );
+                                            })}
+                                          </div>
+                                        </div>
+                                    )}
+
+                                    {examSuggestions?.investigations?.length > 0 && (
+                                        <div>
+                                          <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">
+                                            Suggested Investigations
+                                          </h4>
+                                          <div className="flex flex-wrap gap-2">
+                                            {examSuggestions.investigations.map((item, i) => {
+                                              const isChecked = selectedInvestigations.includes(item);
+                                              return (
+                                                  <button
+                                                      key={i}
+                                                      onClick={() => toggleInvestigation(item)}
+                                                      className={`px-3 py-1.5 rounded-full text-sm border ${
+                                                          isChecked
+                                                              ? 'bg-indigo-100 text-indigo-800 border-indigo-300'
+                                                              : 'bg-white text-gray-600 border-gray-300 hover:border-indigo-300'
+                                                      }`}
+                                                  >
+                                                    {isChecked ? '✓ ' : ''}{item}
+                                                  </button>
+                                              );
+                                            })}
+                                          </div>
+                                        </div>
+                                    )}
+                                    <div className="bg-blue-50 border border-blue-100 rounded-lg p-4">
+                                      <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">
+                                        Add Test Manually
+                                      </h4>
+                                      <div className="flex gap-2 mb-3">
+                                        <input
+                                            type="text"
+                                            value={manualInvestigation}
+                                            onChange={(e) => setManualInvestigation(e.target.value)}
+                                            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addManualInvestigation(); } }}
+                                            placeholder="e.g., Widal Test, Stool Routine..."
+                                            className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                                        />
+                                        <button
+                                            onClick={addManualInvestigation}
+                                            className="bg-gray-800 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-900 flex items-center gap-1"
+                                        >
+                                          <Plus size={16}/> Add
+                                        </button>
+                                      </div>
+
+                                      {selectedInvestigations.length > 0 && (
+                                          <>
+                                            <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">
+                                              Tests to Send ({selectedInvestigations.length})
+                                            </h4>
+                                            <div className="flex flex-wrap gap-2 mb-3">
+                                              {selectedInvestigations.map((item, i) => (
+                                                  <span key={i} className="inline-flex items-center gap-1 bg-indigo-100 text-indigo-800 border border-indigo-300 px-3 py-1.5 rounded-full text-sm">
+                                                    {item}
+                                                    <button onClick={() => removeInvestigation(item)} className="text-indigo-500 hover:text-indigo-800 ml-1">
+                                                      &times;
+                                                    </button>
+                                                  </span>
+                                              ))}
+                                            </div>
+                                          </>
+                                      )}
+
+                                      <button
+                                          onClick={sendToLab}
+                                          disabled={selectedInvestigations.length === 0}
+                                          className="w-full bg-blue-600 text-white px-4 py-2.5 rounded-lg text-sm font-bold flex items-center justify-center gap-2 hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed"
+                                      >
+                                        🧪 Send to Lab
+                                      </button>
+                                    </div>
+
+                                    {examSuggestions?.generalExamination?.length > 0 && (
+                                        <div>
+                                          <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">General Examination</h4>
+                                          <div className="grid grid-cols-2 gap-3">
+                                            {examSuggestions.generalExamination.map((param, i) => (
+                                                <div key={i}>
+                                                  <label className="block text-xs text-gray-500 mb-1">{param.name}</label>
+                                                  <input
+                                                      type="text"
+                                                      value={examValues[param.name] || ''}
+                                                      onChange={(e) => setExamValue(param.name, e.target.value)}
+                                                      placeholder={`Normal: ${param.normalRange}`}
+                                                      className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                                                  />
+                                                </div>
+                                            ))}
+                                          </div>
+                                        </div>
+                                    )}
+
+                                    {examSuggestions?.systemicExamination?.length > 0 && (
+                                        <div>
+                                          <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Systemic Examination</h4>
+                                          <div className="grid grid-cols-2 gap-3">
+                                            {examSuggestions.systemicExamination.map((param, i) => (
+                                                <div key={i}>
+                                                  <label className="block text-xs text-gray-500 mb-1">{param.name}</label>
+                                                  <input
+                                                      type="text"
+                                                      value={examValues[param.name] || ''}
+                                                      onChange={(e) => setExamValue(param.name, e.target.value)}
+                                                      placeholder={`Normal: ${param.normalRange}`}
+                                                      className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                                                  />
+                                                </div>
+                                            ))}
+                                          </div>
+                                        </div>
+                                    )}
+                                  </div>
+
+                                  <div className="p-4 bg-white border-t flex justify-between">
+                                    <button
+                                        onClick={() => setConsultStep('history')}
+                                        className="bg-white border text-gray-600 px-6 py-2.5 rounded-lg text-sm font-semibold hover:bg-gray-50"
+                                    >
+                                      ← Back
+                                    </button>
+                                    <button
+                                        onClick={() => setConsultStep('findings')}
+                                        className="bg-indigo-600 text-white px-6 py-2.5 rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-indigo-700 transition-all shadow-sm"
+                                    >
+                                      Next: Findings & Summary <ArrowRight size={16}/>
+                                    </button>
+                                  </div>
+                                </div>
+                            )}
+
+                            {/* --- STEP 3: Findings & Summary --- */}
+                            {consultStep === 'findings' && (
+                                <div className="flex-1 flex flex-col overflow-hidden">
+                                  <div className="p-4 border-b bg-gray-50">
+                                    <h3 className="font-bold text-gray-900 text-lg flex items-center gap-2">
+                                      <FileText className="text-indigo-600" size={18}/> Findings & Summary
+                                    </h3>
+                                    <p className="text-xs text-gray-500">Review everything documented before running diagnosis.</p>
+                                  </div>
+
+                                  <div className="flex-1 overflow-y-auto p-5 space-y-5">
+                                    <div className="bg-gray-50 rounded-lg p-4 border">
+                                      <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Chief Complaint</h4>
+                                      <p className="text-sm text-gray-800">{activePatient?.complaint || 'N/A'}</p>
+                                    </div>
+
+                                    <div className="bg-gray-50 rounded-lg p-4 border">
+                                      <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Manual History</h4>
+                                      <p className="text-sm text-gray-800">{manualHistory || 'Not documented'}</p>
+                                    </div>
+
+                                    <div className="bg-gray-50 rounded-lg p-4 border">
+                                      <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Symptoms</h4>
+                                      {selectedSymptoms.length > 0 ? (
+                                          <div className="flex flex-wrap gap-2">
+                                            {selectedSymptoms.map(sym => {
+                                              const d = symptomDurations[sym.id];
+                                              return (
+                                                  <span key={sym.id} className="bg-indigo-100 text-indigo-700 px-2.5 py-1 rounded-full text-xs">
+                              {sym.name}{d?.num ? ` (${d.num} ${d.unit})` : ''}
+                            </span>
+                                              );
+                                            })}
+                                          </div>
+                                      ) : <p className="text-sm text-gray-400 italic">None selected</p>}
+                                    </div>
+
+                                    <div className="bg-gray-50 rounded-lg p-4 border">
+                                      <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Negative History</h4>
+                                      {selectedNegativeHistory.length > 0 ? (
+                                          <p className="text-sm text-gray-800">{selectedNegativeHistory.join(', ')}</p>
+                                      ) : <p className="text-sm text-gray-400 italic">None confirmed</p>}
+                                    </div>
+
+                                    <div className="bg-gray-50 rounded-lg p-4 border">
+                                      <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Investigations Ordered</h4>
+                                      {selectedInvestigations.length > 0 ? (
+                                          <p className="text-sm text-gray-800">{selectedInvestigations.join(', ')}</p>
+                                      ) : <p className="text-sm text-gray-400 italic">None selected</p>}
+                                    </div>
+
+                                    <div className="bg-gray-50 rounded-lg p-4 border">
+                                      <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Examination Findings</h4>
+                                      {Object.keys(examValues).length > 0 ? (
+                                          <div className="grid grid-cols-2 gap-2">
+                                            {Object.entries(examValues).map(([name, val]) => (
+                                                <p key={name} className="text-sm text-gray-800"><span className="text-gray-500">{name}:</span> {val || '—'}</p>
+                                            ))}
+                                          </div>
+                                      ) : <p className="text-sm text-gray-400 italic">Not documented</p>}
+                                    </div>
+
+                                    {activePatient?.labResults && (
+                                        <div className="bg-yellow-50 rounded-lg p-4 border border-yellow-200">
+                                          <h4 className="text-xs font-bold text-yellow-700 uppercase tracking-wider mb-1">Lab Results</h4>
+                                          <p className="text-sm text-gray-800 whitespace-pre-wrap">{activePatient.labResults}</p>
+                                        </div>
+                                    )}
+                                  </div>
+
+                                  <div className="p-4 bg-white border-t flex justify-between">
+                                    <button
+                                        onClick={() => setConsultStep('exams')}
+                                        className="bg-white border text-gray-600 px-6 py-2.5 rounded-lg text-sm font-semibold hover:bg-gray-50"
+                                    >
+                                      ← Back
+                                    </button>
+                                    <button
+                                        onClick={() => setConsultStep('diagnosis')}
+                                        className="bg-indigo-600 text-white px-6 py-2.5 rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-indigo-700 transition-all shadow-sm"
+                                    >
+                                      Next: Provisional Diagnosis <ArrowRight size={16}/>
+                                    </button>
+                                  </div>
+                                </div>
+                            )}
+
+                            {/* --- STEP 4: Provisional Diagnosis --- */}
                             {consultStep === 'diagnosis' && (
                                 <div className="flex-1 flex flex-col p-6 overflow-y-auto bg-slate-50">
-                                  {activePatient?.labResults && (
-                                      <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-4">
-                                        <h4 className="text-sm font-bold text-yellow-800 mb-1">🧪 Lab Results Available</h4>
-                                        <p className="text-xs text-gray-700 whitespace-pre-wrap">{activePatient.labResults}</p>
-                                      </div>
-                                  )}
-                                  <div className="mb-6">
-                                    <h3 className="font-bold text-gray-900 text-lg flex items-center gap-2">
-                                      <BrainCircuit className="text-purple-600"/> AI Differential Diagnosis
-                                    </h3>
-                                    <p className="text-sm text-gray-600 mt-1">Review AI suggestions based on clinical
-                                      findings.</p>
+                                  <div className="mb-6 flex justify-between items-start">
+                                    <div>
+                                      <h3 className="font-bold text-gray-900 text-lg flex items-center gap-2">
+                                        <Stethoscope className="text-purple-600"/> Provisional Diagnosis
+                                      </h3>
+                                      <p className="text-sm text-gray-600 mt-1">Review AI suggestions based on clinical findings.</p>
+                                    </div>
+                                    <button
+                                        onClick={runAIEngine}
+                                        disabled={aiLoading}
+                                        className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 hover:shadow-md transition-all disabled:opacity-70 flex-shrink-0"
+                                    >
+                                      {aiLoading ? (<><Activity size={16} className="animate-spin"/> Analyzing...</>) : (<><Sparkles size={16}/> Run AI Assistant</>)}
+                                    </button>
                                   </div>
 
                                   {aiLoading ? (
-                                      <div
-                                          className="flex-1 flex flex-col items-center justify-center text-indigo-600 space-y-4">
+                                      <div className="flex-1 flex flex-col items-center justify-center text-indigo-600 space-y-4">
                                         <Activity size={40} className="animate-spin"/>
-                                        <p className="font-medium animate-pulse">Consulting medical literature &
-                                          analyzing...</p>
+                                        <p className="font-medium animate-pulse">Consulting medical literature & analyzing...</p>
                                       </div>
                                   ) : aiError ? (
-                                      <div
-                                          className="bg-red-50 border border-red-200 text-red-700 p-4 rounded-lg flex items-start gap-3">
+                                      <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded-lg flex items-start gap-3">
                                         <AlertTriangle className="shrink-0 mt-0.5" size={18}/>
                                         <p className="text-sm">{aiError}</p>
                                       </div>
                                   ) : aiResult ? (
                                       <div className="space-y-6">
                                         <div className="bg-white p-5 rounded-xl border border-indigo-100 shadow-sm">
-                                          <h4 className="text-sm font-bold text-indigo-900 uppercase tracking-wider mb-4 border-b border-indigo-50 pb-2">Possible
-                                            Conditions (Select to accept)</h4>
+                                          <h4 className="text-sm font-bold text-indigo-900 uppercase tracking-wider mb-4 border-b border-indigo-50 pb-2">Possible Conditions (Select to accept)</h4>
                                           <div className="space-y-2">
                                             {aiResult.ddx.map((diag, idx) => (
-                                                <label key={idx}
-                                                       className={`flex items-start gap-3 p-3 rounded-lg cursor-pointer transition-colors border ${
-                                                           selectedDdx.includes(diag) ? 'bg-indigo-50 border-indigo-200' : 'bg-white border-gray-200 hover:bg-gray-50'
-                                                       }`}>
+                                                <label key={idx} className={`flex items-start gap-3 p-3 rounded-lg cursor-pointer transition-colors border ${selectedDdx.includes(diag) ? 'bg-indigo-50 border-indigo-200' : 'bg-white border-gray-200 hover:bg-gray-50'}`}>
                                                   <div className="mt-0.5">
-                                                    <input
-                                                        type="checkbox"
-                                                        checked={selectedDdx.includes(diag)}
-                                                        onChange={() => toggleDdxSelection(diag)}
-                                                        className="w-4 h-4 text-indigo-600 rounded focus:ring-indigo-500"
-                                                    />
+                                                    <input type="checkbox" checked={selectedDdx.includes(diag)} onChange={() => toggleDdxSelection(diag)} className="w-4 h-4 text-indigo-600 rounded focus:ring-indigo-500"/>
                                                   </div>
-                                                  <span
-                                                      className={`text-sm font-medium ${selectedDdx.includes(diag) ? 'text-indigo-900' : 'text-gray-700'}`}>
-                                      {diag}
-                                    </span>
+                                                  <span className={`text-sm font-medium ${selectedDdx.includes(diag) ? 'text-indigo-900' : 'text-gray-700'}`}>{diag}</span>
                                                 </label>
                                             ))}
                                           </div>
                                         </div>
 
                                         <div className="bg-white p-5 rounded-xl border border-blue-100 shadow-sm">
-                                          <h4 className="text-sm font-bold text-blue-900 uppercase tracking-wider mb-3 border-b border-blue-50 pb-2">Suggested
-                                            Investigations</h4>
-                                          <ul className="list-disc list-inside space-y-1.5 text-sm text-gray-700">
-                                            {aiResult.labs.map((lab, idx) => (
-                                                <li key={idx}>{lab}</li>
-                                            ))}
-                                          </ul>
+                                          <h4 className="text-sm font-bold text-blue-900 uppercase tracking-wider mb-3 border-b border-blue-50 pb-2">Suggested Investigations</h4>
+
+                                          <div className="flex flex-wrap gap-2">
+                                            {aiResult.labs.map((lab, idx) => {
+                                              const isChecked = selectedAiLabs.includes(lab);
+                                              return (
+                                                  <button
+                                                      key={idx}
+                                                      onClick={() => toggleAiLab(lab)}
+                                                      className={`px-3 py-1.5 rounded-full text-sm border ${
+                                                          isChecked
+                                                              ? 'bg-blue-100 text-blue-800 border-blue-300'
+                                                              : 'bg-white text-gray-600 border-gray-300 hover:border-blue-300'
+                                                      }`}
+                                                  >
+                                                    {isChecked ? '✓ ' : ''}{lab}
+                                                  </button>
+                                              );
+                                            })}
+                                          </div>
                                         </div>
 
                                         <div className="flex justify-end gap-2 pt-4">
                                           <button
-                                              onClick={sendToLab}
-                                              className="bg-blue-100 text-blue-700 px-6 py-2.5 rounded-lg text-sm font-semibold flex items-center gap-2"
+                                              onClick={sendDiagnosisLabsToLab}
+                                              disabled={selectedAiLabs.length === 0}
+                                              className="bg-blue-100 text-blue-700 px-6 py-2.5 rounded-lg text-sm font-semibold flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
                                           >
-                                            🧪 Send to Lab
+                                            🧪 Send to Lab {selectedAiLabs.length > 0 ? `(${selectedAiLabs.length})` : ''}
                                           </button>
-                                          <button
-                                              onClick={acceptDiagnosis}
-                                              disabled={selectedDdx.length === 0}
-                                              className="bg-indigo-600 text-white px-6 py-2.5 rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-indigo-700 transition-all disabled:opacity-50 shadow-sm"
-                                          >
+                                          <button onClick={acceptDiagnosis} disabled={selectedDdx.length === 0} className="bg-indigo-600 text-white px-6 py-2.5 rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-indigo-700 transition-all disabled:opacity-50 shadow-sm">
                                             Accept & Continue to Plan <ArrowRight size={16}/>
                                           </button>
                                         </div>
+
                                       </div>
                                   ) : (
-                                      <div
-                                          className="flex-1 flex flex-col items-center justify-center text-gray-400 space-y-3">
+                                      <div className="flex-1 flex flex-col items-center justify-center text-gray-400 space-y-3">
                                         <Sparkles size={32} className="opacity-50"/>
-                                        <p className="text-sm">Run the AI Assistant from the History tab first.</p>
+                                        <p className="text-sm">Click "Run AI Assistant" above to generate a differential diagnosis.</p>
                                       </div>
                                   )}
+
+                                  <div className="pt-6 flex justify-start">
+                                    <button onClick={() => setConsultStep('findings')} className="bg-white border text-gray-600 px-6 py-2.5 rounded-lg text-sm font-semibold hover:bg-gray-50">
+                                      ← Back
+                                    </button>
+                                  </div>
                                 </div>
                             )}
 
-                            {/* --- STEP 3: Treatment Plan & Rx --- */}
+                            {/* --- STEP 5: Treatment Plan & Rx --- */}
                             {consultStep === 'plan' && (
                                 <div className="flex-1 flex flex-col overflow-hidden bg-slate-50">
-                                  <div
-                                      className="p-4 border-b bg-white flex justify-between items-center shadow-sm z-10">
+                                  <div className="p-4 border-b bg-white flex justify-between items-center shadow-sm z-10">
                                     <div>
-                                      <h3 className="font-bold text-gray-900 text-lg flex items-center gap-2">
-                                        Treatment Plan
-                                      </h3>
+                                      <h3 className="font-bold text-gray-900 text-lg flex items-center gap-2">Treatment Plan</h3>
                                       <div className="text-xs text-gray-500 mt-1 flex flex-wrap gap-1 items-center">
                                         Diagnosis:
                                         {acceptedDiagnosis.map((d, i) => (
-                                            <span key={i}
-                                                  className="bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded font-medium">{d}</span>
+                                            <span key={i} className="bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded font-medium">{d}</span>
                                         ))}
                                       </div>
                                     </div>
-                                    <button
-                                        onClick={generateAIPrescription}
-                                        disabled={aiRxLoading || acceptedDiagnosis.length === 0}
-                                        className="bg-purple-600 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-purple-700 transition-all shadow-sm disabled:opacity-50"
-                                    >
-                                      {aiRxLoading ? <Activity size={16} className="animate-spin"/> :
-                                          <Sparkles size={16}/>}
+                                    <button onClick={generateAIPrescription} disabled={aiRxLoading || acceptedDiagnosis.length === 0} className="bg-purple-600 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-purple-700 transition-all shadow-sm disabled:opacity-50">
+                                      {aiRxLoading ? <Activity size={16} className="animate-spin"/> : <Sparkles size={16}/>}
                                       Auto-Generate Rx
                                     </button>
                                   </div>
 
                                   <div className="flex-1 overflow-y-auto p-4 space-y-6">
                                     {aiRxError && (
-                                        <div
-                                            className="bg-red-50 text-red-600 p-3 rounded-lg text-sm flex gap-2 items-center">
+                                        <div className="bg-red-50 text-red-600 p-3 rounded-lg text-sm flex gap-2 items-center">
                                           <AlertTriangle size={16}/> {aiRxError}
                                         </div>
                                     )}
 
-                                    {/* Rx List */}
                                     <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
                                       <div className="p-3 bg-gray-50 border-b flex justify-between items-center">
-                                        <h4 className="text-sm font-bold text-gray-700 uppercase">Prescription (<span
-                                            className="text-xl font-serif text-gray-400 italic font-normal mr-1 pr-1 border-r">Rx</span>)
-                                        </h4>
+                                        <h4 className="text-sm font-bold text-gray-700 uppercase">Prescription (<span className="text-xl font-serif text-gray-400 italic font-normal mr-1 pr-1 border-r">Rx</span>)</h4>
                                       </div>
-
                                       {prescriptions.length === 0 ? (
                                           <div className="p-8 text-center text-gray-400 text-sm">
                                             No medications added yet. <br/>Use AI generation or add manually below.
@@ -1519,25 +2290,19 @@ export default function MedFlowApp() {
                                       ) : (
                                           <ul className="divide-y">
                                             {prescriptions.map((med, idx) => (
-                                                <li key={med.id}
-                                                    className="p-4 flex justify-between items-start hover:bg-gray-50">
+                                                <li key={med.id} className="p-4 flex justify-between items-start hover:bg-gray-50">
                                                   <div className="flex items-start gap-3">
-                                                    <div
-                                                        className="mt-1 bg-blue-100 text-blue-700 w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold">{idx + 1}</div>
+                                                    <div className="mt-1 bg-blue-100 text-blue-700 w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold">{idx + 1}</div>
                                                     <div>
                                                       <h5 className="font-bold text-gray-900">{med.name}</h5>
                                                       <div className="flex gap-4 mt-1 text-sm text-gray-600">
-                                                        <span
-                                                            className="font-medium bg-gray-100 px-2 rounded">{med.dosage}</span>
-                                                        <span>for <span
-                                                            className="font-medium text-gray-800">{med.duration}</span></span>
+                                                        <span className="font-medium bg-gray-100 px-2 rounded">{med.dosage}</span>
+                                                        <span>for <span className="font-medium text-gray-800">{med.duration}</span></span>
                                                       </div>
-                                                      {med.note &&
-                                                          <p className="text-xs text-gray-500 mt-1.5 italic">{med.note}</p>}
+                                                      {med.note && <p className="text-xs text-gray-500 mt-1.5 italic">{med.note}</p>}
                                                     </div>
                                                   </div>
-                                                  <button onClick={() => removeMedicine(med.id)}
-                                                          className="text-red-400 hover:text-red-600 p-1">
+                                                  <button onClick={() => removeMedicine(med.id)} className="text-red-400 hover:text-red-600 p-1">
                                                     <Trash2 size={16}/>
                                                   </button>
                                                 </li>
@@ -1546,44 +2311,20 @@ export default function MedFlowApp() {
                                       )}
                                     </div>
 
-                                    {/* Manual Add Form */}
-                                    <div
-                                        className="bg-white rounded-xl border border-dashed border-gray-300 p-4 shadow-sm">
-                                      <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Add
-                                        Medication Manually</h4>
+                                    <div className="bg-white rounded-xl border border-dashed border-gray-300 p-4 shadow-sm">
+                                      <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Add Medication Manually</h4>
                                       <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
                                         <div className="sm:col-span-5">
-                                          <input
-                                              type="text"
-                                              placeholder="Medicine Name (e.g., Tab. Azithromycin 500mg)"
-                                              value={medName}
-                                              onChange={e => setMedName(e.target.value)}
-                                              className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-                                          />
+                                          <input type="text" placeholder="Medicine Name (e.g., Tab. Azithromycin 500mg)" value={medName} onChange={e => setMedName(e.target.value)} className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none"/>
                                         </div>
                                         <div className="sm:col-span-3">
-                                          <input
-                                              type="text"
-                                              placeholder="Dosage (e.g., 1-0-1)"
-                                              value={medDosage}
-                                              onChange={e => setMedDosage(e.target.value)}
-                                              className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-                                          />
+                                          <input type="text" placeholder="Dosage (e.g., 1-0-1)" value={medDosage} onChange={e => setMedDosage(e.target.value)} className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none"/>
                                         </div>
                                         <div className="sm:col-span-2">
-                                          <input
-                                              type="text"
-                                              placeholder="Days"
-                                              value={medDuration}
-                                              onChange={e => setMedDuration(e.target.value)}
-                                              className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-                                          />
+                                          <input type="text" placeholder="Days" value={medDuration} onChange={e => setMedDuration(e.target.value)} className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none"/>
                                         </div>
                                         <div className="sm:col-span-2">
-                                          <button
-                                              onClick={addManualMedicine}
-                                              className="w-full bg-gray-800 text-white px-3 py-2 rounded-lg text-sm font-medium hover:bg-gray-900 transition-colors h-full flex justify-center items-center"
-                                          >
+                                          <button onClick={addManualMedicine} className="w-full bg-gray-800 text-white px-3 py-2 rounded-lg text-sm font-medium hover:bg-gray-900 transition-colors h-full flex justify-center items-center">
                                             <Plus size={16}/> Add
                                           </button>
                                         </div>
@@ -1591,15 +2332,18 @@ export default function MedFlowApp() {
                                     </div>
                                   </div>
 
-                                  {/* Footer Action */}
-                                  <div
-                                      className="p-4 bg-white border-t flex justify-end gap-3 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
-                                    <button
-                                        onClick={finishConsultation}
-                                        className="bg-green-600 text-white px-8 py-2.5 rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-green-700 transition-colors shadow-sm"
-                                    >
-                                      <CheckCircle2 size={18}/> Complete Consultation & Send to Pharmacy
+                                  <div className="p-4 bg-white border-t flex justify-between gap-3 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
+                                    <button onClick={() => setConsultStep('diagnosis')} className="bg-white border text-gray-600 px-6 py-2.5 rounded-lg text-sm font-semibold hover:bg-gray-50">
+                                      ← Back
                                     </button>
+                                    <div className="flex items-center gap-4">
+                                      <button onClick={() => printPrescription(activePatient)} className="bg-blue-600 text-white px-6 py-2.5 rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-blue-700 transition-colors shadow-sm">
+                                        Print Case Paper
+                                      </button>
+                                      <button onClick={finishConsultation} className="bg-green-600 text-white px-8 py-2.5 rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-green-700 transition-colors shadow-sm">
+                                        <CheckCircle2 size={18}/> Send to Pharmacy
+                                      </button>
+                                    </div>
                                   </div>
                                 </div>
                             )}
@@ -1624,12 +2368,12 @@ export default function MedFlowApp() {
               {activeTab === 'lab' && (
                   <div className="max-w-3xl mx-auto space-y-4">
                     <h2 className="text-xl font-bold text-gray-700">Laboratory</h2>
-                    {patients.filter(p => p.status === 'Laboratory').length === 0 ? (
+                    {patients.filter(p => p.labStatus === 'Pending').length === 0 ? (
                         <div className="bg-white p-8 rounded-xl border text-center text-gray-400">
                           No patients waiting for lab results.
                         </div>
                     ) : (
-                        patients.filter(p => p.status === 'Laboratory').map(p => (
+                        patients.filter(p => p.labStatus === 'Pending').map(p => (
                             <div key={p.id} className="bg-white p-4 rounded-xl border shadow-sm">
                               <h3 className="font-bold">{p.name} <span className="text-sm text-gray-500">({p.age}y, {p.gender})</span></h3>
                               <p className="text-sm text-gray-600 mb-2">Investigations ordered: {(p.investigationsOrdered || []).join(', ') || 'General'}</p>
