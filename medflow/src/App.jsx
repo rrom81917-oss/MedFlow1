@@ -145,6 +145,23 @@ const SYMPTOMS_DB = [
   { id: 'o14', category: 'OBG & Gynec', name: 'Moderate anamia with 7.8-9 gm/dl' },
   { id: 'o15', category: 'OBG & Gynec', name: 'Sever anamia with less than 7 gm/dl' },
   { id: 'o16', category: 'OBG & Gynec', name: 'Very sever anamia with less than 5 gm/dl' },
+  { id: 'o17', category: 'OBG & Gynec', name: 'Metrorrhagia (Irregular Bleeding Between Periods)' },
+  { id: 'o18', category: 'OBG & Gynec', name: 'Menometrorrhagia (Heavy & Irregular Bleeding)' },
+  { id: 'o19', category: 'OBG & Gynec', name: 'Polymenorrhea (Cycles < 21 Days)' },
+  { id: 'o20', category: 'OBG & Gynec', name: 'Oligomenorrhea (Cycles > 35 Days)' },
+  { id: 'o21', category: 'OBG & Gynec', name: 'Mittelschmerz (Mid-cycle Ovulatory Pain)' },
+  { id: 'o22', category: 'OBG & Gynec', name: 'Leukorrhea (Normal White Discharge)' },
+  { id: 'o23', category: 'OBG & Gynec', name: 'Pruritus Vulvae (Severe Vulvar Itching)' },
+  { id: 'o24', category: 'OBG & Gynec', name: 'Postcoital Bleeding (Bleeding After Intercourse)' },
+  { id: 'o25', category: 'OBG & Gynec', name: 'Sensation of Lump/Dragging (Pelvic Organ Prolapse)' },
+  { id: 'o26', category: 'OBG & Gynec', name: 'Urinary Incontinence (Stress/Urge)' },
+  { id: 'o27', category: 'OBG & Gynec', name: 'Galactorrhea (Unprovoked Milk Discharge)' },
+  { id: 'o28', category: 'OBG & Gynec', name: 'Hirsutism & Virilization (Excess Hair/Deep Voice)' },
+  { id: 'o29', category: 'OBG & Gynec', name: 'Hyperemesis Gravidarum (Severe Nausea/Vomiting)' },
+  { id: 'o30', category: 'OBG & Gynec', name: 'Bleeding in Early Pregnancy (Threatened Abortion)' },
+  { id: 'o31', category: 'OBG & Gynec', name: 'Antepartum Hemorrhage / APH' },
+  { id: 'o32', category: 'OBG & Gynec', name: 'Preeclamptic Symptoms (Headache/Visual Changes)' },
+  { id: 'o33', category: 'OBG & Gynec', name: 'Pruritus Gravidarum (Itching in Pregnancy without Rash)' },
 
   // ENT
   { id: 'e1', category: 'ENT', name: 'Earache (Otalgia)' },
@@ -154,8 +171,49 @@ const SYMPTOMS_DB = [
   { id: 'e5', category: 'ENT', name: 'Epistaxis (Nosebleed)' },
   { id: 'e6', category: 'ENT', name: 'Sore Throat' },
   { id: 'e7', category: 'ENT', name: 'Dysphagia (Difficulty Swallowing)' },
-  { id: 'e8', category: 'ENT', name: 'Hoarseness of Voice' },
-
+  { id: 'e8', category: 'ENT', name: 'Hoarseness of Voice' },{ id: 'ent1', category: 'ENT', name: 'Otalgia (Earache)' },
+  { id: 'ent2', category: 'ENT', name: 'Otorrhea (Ear Discharge)' },
+  { id: 'ent3', category: 'ENT', name: 'Tinnitus (Ringing in Ears)' },
+  { id: 'ent4', category: 'ENT', name: 'Hearing Loss (Conductive)' },
+  { id: 'ent15', category: 'ENT', name: 'Hearing Loss (Sensorineural)' },
+  { id: 'ent5', category: 'ENT', name: 'Vertigo / Dizziness' },
+  { id: 'ent6', category: 'ENT', name: 'Rhinorrhea (Runny Nose)' },
+  { id: 'ent7', category: 'ENT', name: 'Epistaxis (Nosebleed)' },
+  { id: 'ent8', category: 'ENT', name: 'Anosmia / Hyposmia (Loss of Smell)' },
+  { id: 'ent9', category: 'ENT', name: 'Nasal Obstruction / Congestion' },
+  { id: 'ent10', category: 'ENT', name: 'Odynophagia (Painful Swallowing)' },
+  { id: 'ent11', category: 'ENT', name: 'Dysphagia (Difficulty Swallowing)' },
+  { id: 'ent12', category: 'ENT', name: 'Dysphonia / Hoarseness' },
+  { id: 'ent13', category: 'ENT', name: 'Stridor (Noisy Breathing)' },
+  { id: 'ent14', category: 'ENT', name: 'Globus Sensation (Lump in Throat)' },
+// Dermatology
+  { id: 'derm1', category: 'Dermatology', name: 'Pruritus (Itching)' },
+  { id: 'derm2', category: 'Dermatology', name: 'Maculopapular rash' },
+  { id: 'derm3', category: 'Dermatology', name: 'Erythema' },
+  { id: 'derm4', category: 'Dermatology', name: 'Vesicular lesions' },
+  { id: 'derm5', category: 'Dermatology', name: 'Skin peeling' },
+  { id: 'derm6', category: 'Dermatology', name: 'Nodules' },
+  { id: 'derm7', category: 'Dermatology', name: 'Macule / Patch (Flat discoloration)' },
+  { id: 'derm8', category: 'Dermatology', name: 'Papule / Plaque (Raised solid lesion)' },
+  { id: 'derm9', category: 'Dermatology', name: 'Bulla (Large fluid-filled blister)' },
+  { id: 'derm10', category: 'Dermatology', name: 'Pustule (Pus-filled lesion)' },
+  { id: 'derm11', category: 'Dermatology', name: 'Wheal / Urticaria (Hives)' },
+  { id: 'derm12', category: 'Dermatology', name: 'Comedones (Blackheads/Whiteheads)' },
+  { id: 'derm13', category: 'Dermatology', name: 'Burrow (Scabies tunnel)' },
+  { id: 'derm14', category: 'Dermatology', name: 'Petechiae / Purpura (Non-blanching red spots)' },
+  { id: 'derm15', category: 'Dermatology', name: 'Ecchymosis (Bruising)' },
+  { id: 'derm16', category: 'Dermatology', name: 'Telangiectasia (Dilated capillaries)' },
+  { id: 'derm17', category: 'Dermatology', name: 'Scale (Excess flaking skin)' },
+  { id: 'derm18', category: 'Dermatology', name: 'Crust (Dried serum/blood/pus)' },
+  { id: 'derm19', category: 'Dermatology', name: 'Excoriation (Scratch marks)' },
+  { id: 'derm20', category: 'Dermatology', name: 'Fissure (Linear skin crack)' },
+  { id: 'derm21', category: 'Dermatology', name: 'Ulcer / Erosion (Open sore)' },
+  { id: 'derm22', category: 'Dermatology', name: 'Lichenification (Thickened skin from rubbing)' },
+  { id: 'derm23', category: 'Dermatology', name: 'Dysesthesia (Abnormal skin sensation)' },
+  { id: 'derm24', category: 'Dermatology', name: 'Hyperhidrosis (Excessive sweating)' },
+  { id: 'derm25', category: 'Dermatology', name: 'Anhidrosis (Lack of sweating)' },
+  { id: 'derm26', category: 'Dermatology', name: 'Alopecia (Hair loss)' },
+  { id: 'derm27', category: 'Dermatology', name: 'Nail Dystrophy (Pitting/Clubbing/Onycholysis)' },
   // Oncology (Carcinoma)
   { id: 'onc1', category: 'Oncology', name: 'Palpable Hard Mass' },
   { id: 'onc2', category: 'Oncology', name: 'Night Sweats' },
@@ -318,28 +376,68 @@ const SYMPTOMS_DB = [
   { id: 'c57', category: 'Cardio-Respiratory', name: 'Throat Clearing' },
   { id: 'c58', category: 'Cardio-Respiratory', name: 'Digital Clubbing' },
 
-  // Others (Endocrine, Urinary, Pediatrics, Ophthalmology)
+  // Others (Endocrine, Urinary, Pediatrics, Ophthalmology, Psychiatry)
   { id: 'en1', category: 'Endocrine', name: 'Polyuria' },
   { id: 'en2', category: 'Endocrine', name: 'Polydipsia' },
-  { id: 'en3', category: 'Endocrine', name: 'Heat / Cold Intolerance' },
+  { id: 'en3', category: 'Endocrine', name: 'Heat Intolerance' },
+  { id: 'en4', category: 'Endocrine', name: 'Cold Intolerance' },
   { id: 'u1', category: 'Urinary', name: 'Dysuria' },
   { id: 'u2', category: 'Urinary', name: 'Hematuria' },
   { id: 'u3', category: 'Urinary', name: 'Flank Pain' },
+  { id: 'u4', category: 'Urinary', name: 'Urinary Frequency (Pollakiuria)' },
+  { id: 'u5', category: 'Urinary', name: 'Urinary Urgency (Sudden intense urge)' },
+  { id: 'u6', category: 'Urinary', name: 'Nocturia (Nighttime Urination)' },
+  { id: 'u7', category: 'Urinary', name: 'Urinary Retention (Inability to empty bladder)' },
+  { id: 'u8', category: 'Urinary', name: 'Urinary Incontinence (Leakage of urine)' },
+  { id: 'u9', category: 'Urinary', name: 'Oliguria / Anuria (Decreased or absent urine)' },
+  { id: 'u10', category: 'Urinary', name: 'Hesitancy / Poor Stream' },
+  { id: 'u11', category: 'Urinary', name: 'Testicular Pain / Scrotal Swelling' },
+  { id: 'u12', category: 'Urinary', name: 'Pelvic / Perineal Pain' },
+  { id: 'u13', category: 'Urinary', name: 'Pneumaturia / Fecaluria' },
+
   { id: 'p1', category: 'Pediatrics', name: 'Poor Feeding' },
   { id: 'p2', category: 'Pediatrics', name: 'Excessive Crying / Irritability' },
   { id: 'p3', category: 'Pediatrics', name: 'Delayed Milestones' },
   { id: 'p4', category: 'Pediatrics', name: 'Newborn care/Neonatal care' },
+  { id: 'p5', category: 'Pediatrics', name: 'Failure to Thrive (Poor weight gain)' },
+  { id: 'p6', category: 'Pediatrics', name: 'Lethargy / Decreased Responsiveness' },
+  { id: 'p7', category: 'Pediatrics', name: 'Respiratory Distress (Grunting / Nasal Flaring)' },
+  { id: 'p8', category: 'Pediatrics', name: 'Hypotonia (Floppy Baby)' },
+  { id: 'p9', category: 'Pediatrics', name: 'Febrile Seizures / Convulsions' },
+  { id: 'p10', category: 'Pediatrics', name: 'Vomiting / Regurgitation in Infant' },
+  { id: 'p11', category: 'Pediatrics', name: 'Nocturnal Enuresis (Bedwetting)' },
+  { id: 'p12', category: 'Pediatrics', name: 'Pediatric Rash / Exanthem' },
+  { id: 'p13', category: 'Pediatrics', name: 'Neonatal Icterus (Jaundice in Newborn)' },
+  { id: 'p14', category: 'Pediatrics', name: 'Stridor / Croupy Cough' },
   { id: 'op1', category: 'Ophthalmology', name: 'Blurred Vision' },
   { id: 'op2', category: 'Ophthalmology', name: 'Red Eye' },
   { id: 'op3', category: 'Ophthalmology', name: 'Photophobia' },
+  { id: 'op4', category: 'Ophthalmology', name: 'Painless Vision Loss' },
+  { id: 'op5', category: 'Ophthalmology', name: 'Painful Vision Loss' },
+  { id: 'op6', category: 'Ophthalmology', name: 'Amaurosis Fugax (Transient Vision Loss)' },
+  { id: 'op7', category: 'Ophthalmology', name: 'Visual Field Defects (Scotoma/Hemianopia)' },
+  { id: 'op8', category: 'Ophthalmology', name: 'Diplopia (Double Vision)' },
+  { id: 'op9', category: 'Ophthalmology', name: 'Photopsia (Flashes of Light)' },
+  { id: 'op10', category: 'Ophthalmology', name: 'Floaters' },
+  { id: 'op11', category: 'Ophthalmology', name: 'Nyctalopia (Night Blindness)' },
+  { id: 'op12', category: 'Ophthalmology', name: 'Epiphora (Excessive Tearing)' },
+  { id: 'op13', category: 'Ophthalmology', name: 'Foreign Body Sensation / Grittiness' },
+  { id: 'op14', category: 'Ophthalmology', name: 'Asthenopia (Eye Strain / Fatigue)' },
+  { id: 'op15', category: 'Ophthalmology', name: 'Ptosis (Drooping Eyelid)' },
+  { id: 'op16', category: 'Ophthalmology', name: 'Proptosis / Exophthalmos (Bulging Eye)' },
+  // Psychiatry
+  { id: 'psy1', category: 'Psychiatry', name: 'Depressed Mood / Sadness' },
+  { id: 'psy2', category: 'Psychiatry', name: 'Anhedonia (Loss of Interest/Pleasure)' },
+  { id: 'psy3', category: 'Psychiatry', name: 'Mania / Hypomania (Elevated Mood)' },
+  { id: 'psy4', category: 'Psychiatry', name: 'Emotional Lability (Rapid Mood Swings)' },
+  { id: 'psy5', category: 'Psychiatry', name: 'Hallucinations (Auditory/Visual)' },
+  { id: 'psy6', category: 'Psychiatry', name: 'Delusions (Fixed False Beliefs)' },
+  { id: 'psy7', category: 'Psychiatry', name: 'Disorganized Speech / Thought' },
+  { id: 'psy8', category: 'Psychiatry', name: 'Panic Attacks' },
+  { id: 'psy9', category: 'Psychiatry', name: 'Obsessions and Compulsions' },
+  { id: 'psy10', category: 'Psychiatry', name: 'Severe Insomnia / Sleep Disturbances' },
+  { id: 'psy11', category: 'Psychiatry', name: 'Catatonia' },
 
-  // Dermatology
-  { id: 'derm1', category: 'Dermatology', name: 'Pruritus (Itching)' },
-  { id: 'derm2', category: 'Dermatology', name: 'Maculopapular rash' },
-  { id: 'derm3', category: 'Dermatology', name: 'Erythema' },
-  { id: 'derm4', category: 'Dermatology', name: 'Vesicular lesions' },
-  { id: 'derm5', category: 'Dermatology', name: 'Skin peeling' },
-  { id: 'derm6', category: 'Dermatology', name: 'Nodules' },
 ];
 
 const CATEGORIES = [
@@ -348,6 +446,7 @@ const CATEGORIES = [
   'Infectious Disease',
   'OBG & Gynec',
   'ENT',
+  'Dermatology',
   'Oncology',
   'Surgery',
   'Trauma',
@@ -359,7 +458,7 @@ const CATEGORIES = [
   'Urinary',
   'Pediatrics',
   'Ophthalmology',
-  'Dermatology'
+  'Psychiatry',
 ];
 
 const ROLES = [
@@ -386,6 +485,7 @@ export default function MedFlowApp() {
     address: "dhunsol, agathala highway, lakhani, State gujarat - 385360",
     doctorName: "Dr. Ramesh Tantiya, MBBS",
     contact: "+91 93276 81907",
+    email: "abcd@gmail.com",
   });
   const updateHospitalInfo = (field, value) => {
     setHospitalInfo(prev => ({ ...prev, [field]: value }));
@@ -405,7 +505,7 @@ export default function MedFlowApp() {
 You are an expert Consultant Physician AI. Based on the patient data below, suggest
 relevant clinical documentation to help the doctor complete a thorough workup.
 
-Patient Profile: ${activePatient?.age}, ${activePatient?.gender}.
+Patient Profile: ${activePatient?.age}, ${activePatient?.gender}, ${activePatient?.occupation}.
 Chief Complaint: ${activePatient?.complaint}.
 Selected Clinical Findings & Symptoms: ${symNames || 'None selected'}.
 Doctor's Manual History: ${manualHistory || 'Not provided'}.
@@ -554,7 +654,7 @@ You MUST return your response as a valid JSON object matching exactly this schem
   });
   const [currentRole, setCurrentRole] = useState(() => {
     const saved = localStorage.getItem('medflow_role');
-    return saved ? JSON.parse(saved) : null;
+    return saved ? (saved) : null;
   });
   const [loginUsername, setLoginUsername] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
@@ -571,7 +671,7 @@ You MUST return your response as a valid JSON object matching exactly this schem
   const [newPatientAge, setNewPatientAge] = useState('');
   const [newPatientGender, setNewPatientGender] = useState('male');
   const [newPatientTriage, setNewPatientTriage] = useState('GREEN');
-  const [newPatientComplaint, setNewPatientComplaint] = useState('');
+  const [newPatientOccupation, setNewPatientOccupation] = useState('');
   const [followUpUhid, setFollowUpUhid] = useState("");
   const [newPatientAddress, setNewPatientAddress] = useState('');
 
@@ -688,6 +788,8 @@ You MUST return your response as a valid JSON object matching exactly this schem
       setNewPatientName('');
       setNewPatientAge('');
       setNewPatientGender('male');
+      setNewPatientAddress('');
+      setNewPatientOccupation('');
       return;
     }
     const q = query.trim().toLowerCase();
@@ -718,7 +820,7 @@ You MUST return your response as a valid JSON object matching exactly this schem
                 ? {
                   ...p,
                   status: 'Nursing',
-                  complaint: newPatientComplaint || 'Follow-up visit',
+                  complaint: newPatientOccupation || 'Follow-up visit',
                   triage: newPatientTriage,
                   vitals: null,
                 }
@@ -727,7 +829,7 @@ You MUST return your response as a valid JSON object matching exactly this schem
         setFollowUpUhid("");
         setNewPatientName('');
         setNewPatientAge('');
-        setNewPatientComplaint('');
+        setNewPatientOccupation('');
         setNewPatientAddress('');
         setShowAddPatientModal(false);
         return;
@@ -747,14 +849,14 @@ You MUST return your response as a valid JSON object matching exactly this schem
       uhid: `EHR${Math.floor(Math.random() * 900000 + 100000)}`,
       triage: newPatientTriage,
       status: 'Nursing',
-      complaint: newPatientComplaint || 'General consultation',
+      occupation: newPatientOccupation || '',
       address: newPatientAddress || '',
       vitals: null,
     };
     setPatients([newPt, ...patients]);
     setNewPatientName('');
     setNewPatientAge('');
-    setNewPatientComplaint('');
+    setNewPatientOccupation('');
     setNewPatientAddress('');
     setShowAddPatientModal(false);
   };
@@ -805,7 +907,7 @@ You MUST return your response as a valid JSON object matching exactly this schem
   };
 
   const runAIEngine = async () => {
-    if (selectedSymptoms.length === 0) return;
+    if (selectedSymptoms.length === 0 && !manualHistory) return;
     setAiLoading(true);
     setAiError('');
     setAiResult(null);
@@ -818,7 +920,7 @@ You MUST return your response as a valid JSON object matching exactly this schem
       You are an expert Consultant Physician AI referencing standard medical textbooks (e.g., Harrison's Principles of Internal Medicine, Bailey & Love's Short Practice of Surgery, Williams Obstetrics).
       
       Patient Profile: ${activePatient?.age}, ${activePatient?.gender}.
-      Chief Complaint: ${activePatient?.complaint}.
+      Occupation: ${activePatient?.occupation}.
       Selected Clinical Findings & Symptoms: ${symNames}.
 Doctor's Manual History: ${manualHistory || 'Not provided'}.
 Negative History: ${selectedNegativeHistory.join(', ') || 'None confirmed'}.
@@ -955,7 +1057,7 @@ Based on the complete patient summary above (symptoms, manual history, negative 
             }
             : p
     ));
-    setSelectedPatientId(null);
+
   };
 
   const saveLabResults = (patientId, resultsText) => {
@@ -1146,18 +1248,20 @@ Based on the complete patient summary above (symptoms, manual history, negative 
             <div style="text-align: center; border-bottom: 2px solid #333; padding-bottom: 10px; margin-bottom: 20px;">
                 <h2 style="margin:0;">${hospitalInfo.name}</h2>
                 <p style="margin:2px 0; font-size:13px;">${hospitalInfo.address}</p>
-                <p style="margin:2px 0; font-size:13px;">${hospitalInfo.doctorName} &nbsp;|&nbsp; Contact: ${hospitalInfo.contact}</p>
+                <p style="margin:2px 0; font-size:13px;">${hospitalInfo.doctorName} </p>
+                <p style="margin:2px 0; font-size:13px;">${hospitalInfo.email}&nbsp;|&nbsp; Contact: ${hospitalInfo.contact}</p>
             </div>
             
             <p style="text-align: left;"><b>Patient:</b> ${patient.name}&nbsp;&nbsp;|&nbsp;&nbsp;<b>Age/Sex:</b> ${patient.age} / ${patient.gender}</p>
+            <p style="margin:2px 0; font-size:13px;">${patient.address}</p>
             <hr style="border: 0; border-top: 1px solid #eee; margin: 15px 0;">
             
             <div style="margin-bottom: 20px; text-align: left;">
                 <h4 style="margin:0 0 5px 0; color:#333;">CLINICAL SUMMARY</h4>
-                <p style="margin:2px 0; font-size:14px;"><b>Chief Complaint:</b> ${patient.complaint || 'N/A'}</p>
+                <p style="margin:2px 0; font-size:14px;"><b>Occupation:</b> ${patient.occupation} </p>
                 <p style="margin:2px 0; font-size:14px;"><b>Symptoms:</b> ${symptomsStr}</p>
                 <p style="margin:2px 0; font-size:14px;"><b>Negative History:</b> ${negHistoryStr}</p>
-                <p style="margin:2px 0; font-size:14px;"><b>Examinations:</b> ${examsStr}</p>
+                <p style="margin:2px 0; font-size:14px;"><b>Examinations:</b> ${examsStr || 'Normal Value'}</p>
                 <p style="margin:2px 0; font-size:14px;"><b>Lab Results:</b> ${patient.labResults || 'Pending / None'}</p>
             </div>
 
@@ -1226,7 +1330,7 @@ Based on the complete patient summary above (symptoms, manual history, negative 
         <div className="flex h-screen items-center justify-center bg-gray-100 font-sans">
           <form onSubmit={handleLogin} className="bg-white p-8 rounded-xl shadow-md w-full max-w-sm space-y-4">
             <div className="text-center mb-4">
-              <h2 className="text-xl font-bold text-gray-800">MedFlow EHR</h2>
+              <h2 className="text-xl font-bold text-gray-800">MedFlow AI</h2>
               <p className="text-sm text-gray-500">Sign in to continue</p>
             </div>
             <div>
@@ -1267,27 +1371,27 @@ Based on the complete patient summary above (symptoms, manual history, negative 
             <div className="p-4 flex items-center space-x-3 border-b border-slate-700">
               <Activity className="text-blue-400 w-6 h-6"/>
               <div>
-                <h1 className="font-bold text-lg leading-tight">MedFlow EHR</h1>
-                <p className="text-xs text-slate-400">Hospital Workflow</p>
+                <h1 className="font-bold text-lg leading-tight">MedFlow AI</h1>
+                <p className="text-xs text-slate-400">Hospital Workflow Made PR</p>
               </div>
             </div>
             <div className="flex-1 py-4 space-y-1">
-              {currentRole?.tabs.includes('reception') && (
-                  <SidebarItem step="1" icon={Users} label="Reception" id="reception"/>
+              {currentRole?.tabs?.includes('reception') && (
+                  <SidebarItem step="1" icon={Users} label="Reception" id="reception" />
               )}
-              {currentRole?.tabs.includes('nursing') && (
-                  <SidebarItem step="2" icon={HeartPulse} label="Nursing Station" id="nursing"/>
+              {currentRole?.tabs?.includes('nursing') && (
+                  <SidebarItem step="2" icon={HeartPulse} label="Nursing Station" id="nursing" />
               )}
-              {currentRole?.tabs.includes('doctor') && (
-                  <SidebarItem step="3" icon={Stethoscope} label="MO Consultation" id="doctor"/>
+              {currentRole?.tabs?.includes('doctor') && (
+                  <SidebarItem step="3" icon={Stethoscope} label="MO Consultation" id="doctor" />
               )}
-              {currentRole?.tabs.includes('lab') && (
-                  <SidebarItem step="4" icon={FlaskConical} label="Laboratory" id="lab"/>
+              {currentRole?.tabs?.includes('lab') && (
+                  <SidebarItem step="4" icon={FlaskConical} label="Laboratory" id="lab" />
               )}
-              {currentRole?.tabs.includes('pharmacy') && (
-                  <SidebarItem step="5" icon={Pill} label="Pharmacy" id="pharmacy"/>
+              {currentRole?.tabs?.includes('pharmacy') && (
+                  <SidebarItem step="5" icon={Pill} label="Pharmacy" id="pharmacy" />
               )}
-              {currentRole?.tabs.includes('settings') && (
+              {currentRole?.tabs?.includes('settings') && (
                   <SidebarItem step="6" icon={Settings} label="Settings" id="settings"/>
               )}
             </div>
@@ -1347,7 +1451,7 @@ Based on the complete patient summary above (symptoms, manual history, negative 
                           <th className="p-4">UHID</th>
                           <th className="p-4">Patient Name</th>
                           <th className="p-4">Age / Gender</th>
-                          <th className="p-4">Chief Complaint</th>
+                          <th className="p-4">Occupation</th>
                           <th className="p-4">Address</th>
                           <th className="p-4">Triage</th>
                           <th className="p-4">Current Status</th>
@@ -1360,7 +1464,7 @@ Based on the complete patient summary above (symptoms, manual history, negative 
                               <td className="p-4 font-medium text-gray-900">{p.name}</td>
                               <td className="p-4 whitespace-nowrap">{p.age} / <span
                                   className="capitalize">{p.gender}</span></td>
-                              <td className="p-4 text-gray-600 max-w-[200px] truncate">{p.complaint}</td>
+                              <td className="p-4 text-gray-600 max-w-[200px] truncate">{p.occupation}</td>
                               <td className="p-4 text-gray-600 max-w-[200px] truncate">{p.address || '-'}</td>
                               <td className="p-4">
                           <span className={`text-[10px] font-bold px-2 py-1 rounded-full whitespace-nowrap ${
@@ -1491,13 +1595,12 @@ Based on the complete patient summary above (symptoms, manual history, negative 
 
                               <div>
                                 <label
-                                    className="block text-xs font-semibold text-gray-700 mb-1.5 uppercase tracking-wide">Chief
-                                  Complaint</label>
+                                    className="block text-xs font-semibold text-gray-700 mb-1.5 uppercase tracking-wide">Occupation</label>
                                 <textarea
                                     required
-                                    value={newPatientComplaint}
-                                    onChange={e => setNewPatientComplaint(e.target.value)}
-                                    placeholder="Brief description of symptoms..."
+                                    value={newPatientOccupation}
+                                    onChange={e => setNewPatientOccupation(e.target.value)}
+                                    placeholder="Brief occupation..."
                                     rows="3"
                                     className="w-full border border-gray-300 rounded-lg px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all resize-none"
                                 ></textarea>
@@ -1555,7 +1658,7 @@ Based on the complete patient summary above (symptoms, manual history, negative 
                                           className="text-xs font-medium text-gray-500 bg-white px-2 py-0.5 rounded border">{p.uhid}</span>
                                     </div>
                                     <p className="text-sm text-gray-600 mt-1">{p.age} • {p.gender} • <span
-                                        className="font-medium text-gray-800">{p.complaint}</span></p>
+                                        className="font-medium text-gray-800">{p.occupation}</span></p>
                                   </div>
                                   <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full border ${
                                       p.triage === 'RED' ? 'bg-red-100 text-red-700 border-red-200' :
@@ -1680,9 +1783,9 @@ Based on the complete patient summary above (symptoms, manual history, negative 
                                 </div>
                               </div>
 
-                              <div className="p-4 bg-gray-50">
-                                <h4 className="text-xs font-semibold text-gray-500 uppercase mb-2">Chief Complaint</h4>
-                                <p className="text-sm font-medium text-gray-800">{activePatient.complaint}</p>
+                              <div className="p-4 bg-gray-20">
+                                <h4 className="text-xs font-semibold text-gray-500 uppercase mb-2">Occupation</h4>
+                                <p className="text-sm font-medium text-gray-800">{activePatient.occupation}</p>
                               </div>
 
                               {activePatient.vitals && (
@@ -1756,18 +1859,6 @@ Based on the complete patient summary above (symptoms, manual history, negative 
                             {/* --- STEP 1: History & Symptoms --- */}
                             {consultStep === 'history' && (
                                 <>
-                                  <div className="p-4 border-b bg-gray-50">
-                                    <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">
-                                      Manual History & Symptoms
-                                    </label>
-                                    <textarea
-                                        value={manualHistory}
-                                        onChange={(e) => setManualHistory(e.target.value)}
-                                        placeholder='e.g. "Fever x 3 days, low grade, no chills. Worsening cough since yesterday."'
-                                        rows={3}
-                                        className="w-full border border-gray-300 rounded-lg p-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
-                                    />
-                                  </div>
 
                                   <div className="flex border-b overflow-x-auto p-2 bg-gray-50 gap-2 hide-scrollbar">
                                     {CATEGORIES.map(cat => (
@@ -1836,6 +1927,19 @@ Based on the complete patient summary above (symptoms, manual history, negative 
                                           </div>
                                         </div>
                                     )}
+
+                                    <div className="p-4 border-b bg-gray-50">
+                                      <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">
+                                        Manual History & Symptoms/Complaint
+                                      </label>
+                                      <textarea
+                                          value={manualHistory}
+                                          onChange={(e) => setManualHistory(e.target.value)}
+                                          placeholder='e.g. "Fever x 3 days, low grade, no chills. Worsening cough since yesterday."'
+                                          rows={3}
+                                          className="w-full border border-gray-300 rounded-lg p-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                                      />
+                                    </div>
 
                                     <input
                                         type="text"
@@ -2001,13 +2105,26 @@ Based on the complete patient summary above (symptoms, manual history, negative 
                                             </div>
                                           </>
                                       )}
-
                                       <button
-                                          onClick={sendToLab}
+                                          onClick={() => {
+                                            // Jo nava tests add karya hoy athva hju send na karyu hoy, to sendToLab run thase
+                                            const hasNewTests = selectedInvestigations.some(test => !activePatient?.investigationsOrdered?.includes(test));
+                                            if (activePatient?.labStatus !== 'Pending' || hasNewTests || selectedInvestigations.length > (activePatient?.investigationsOrdered?.length || 0)) {
+                                              sendToLab();
+                                            }
+                                          }}
                                           disabled={selectedInvestigations.length === 0}
-                                          className="w-full bg-blue-600 text-white px-4 py-2.5 rounded-lg text-sm font-bold flex items-center justify-center gap-2 hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed"
+                                          className={`w-full py-2.5 rounded-lg text-sm font-bold flex items-center justify-center gap-2 text-white transition-colors ${
+                                              // CONDITION: Jo pending hoy ANE koi nava test extra select na karya hoy, to j BLACK. Baki BLUE!
+                                              (activePatient?.labStatus === 'Pending' && selectedInvestigations.length <= (activePatient?.investigationsOrdered?.length || 0))
+                                                  ? 'bg-gray-900 hover:bg-black'
+                                                  : 'bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed'
+                                          }`}
                                       >
-                                        🧪 Send to Lab
+                                        <FlaskConical size={16} />
+                                        {(activePatient?.labStatus === 'Pending' && selectedInvestigations.length <= (activePatient?.investigationsOrdered?.length || 0))
+                                            ? 'Sent to Lab (Pending Report)'
+                                            : 'Send to Lab'}
                                       </button>
                                     </div>
 
@@ -2080,15 +2197,6 @@ Based on the complete patient summary above (symptoms, manual history, negative 
                                   </div>
 
                                   <div className="flex-1 overflow-y-auto p-5 space-y-5">
-                                    <div className="bg-gray-50 rounded-lg p-4 border">
-                                      <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Chief Complaint</h4>
-                                      <p className="text-sm text-gray-800">{activePatient?.complaint || 'N/A'}</p>
-                                    </div>
-
-                                    <div className="bg-gray-50 rounded-lg p-4 border">
-                                      <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Manual History</h4>
-                                      <p className="text-sm text-gray-800">{manualHistory || 'Not documented'}</p>
-                                    </div>
 
                                     <div className="bg-gray-50 rounded-lg p-4 border">
                                       <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Symptoms</h4>
@@ -2102,8 +2210,14 @@ Based on the complete patient summary above (symptoms, manual history, negative 
                             </span>
                                               );
                                             })}
+
                                           </div>
                                       ) : <p className="text-sm text-gray-400 italic">None selected</p>}
+                                    </div>
+
+                                    <div className="bg-gray-50 rounded-lg p-4 border">
+                                      <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Manual History/Compalint</h4>
+                                      <p className="text-sm text-gray-800">{manualHistory || 'Not documented'}</p>
                                     </div>
 
                                     <div className="bg-gray-50 rounded-lg p-4 border">
@@ -2119,24 +2233,47 @@ Based on the complete patient summary above (symptoms, manual history, negative 
                                           <p className="text-sm text-gray-800">{selectedInvestigations.join(', ')}</p>
                                       ) : <p className="text-sm text-gray-400 italic">None selected</p>}
                                     </div>
-
-                                    <div className="bg-gray-50 rounded-lg p-4 border">
-                                      <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Examination Findings</h4>
-                                      {Object.keys(examValues).length > 0 ? (
-                                          <div className="grid grid-cols-2 gap-2">
-                                            {Object.entries(examValues).map(([name, val]) => (
-                                                <p key={name} className="text-sm text-gray-800"><span className="text-gray-500">{name}:</span> {val || '—'}</p>
-                                            ))}
-                                          </div>
-                                      ) : <p className="text-sm text-gray-400 italic">Not documented</p>}
-                                    </div>
-
                                     {activePatient?.labResults && (
                                         <div className="bg-yellow-50 rounded-lg p-4 border border-yellow-200">
                                           <h4 className="text-xs font-bold text-yellow-700 uppercase tracking-wider mb-1">Lab Results</h4>
                                           <p className="text-sm text-gray-800 whitespace-pre-wrap">{activePatient.labResults}</p>
                                         </div>
                                     )}
+
+                                    <div className="bg-gray-50 rounded-lg p-4 border">
+                                      <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Examination Findings</h4>
+
+                                      {examSuggestions ? (
+                                          <div className="grid grid-cols-2 gap-2">
+
+                                            {examSuggestions.generalExamination?.map((param, i) => {
+                                              const displayValue = examValues[param.name] || `Normal: ${param.normalRange}`;
+                                              return (
+                                                  <p key={`gen-${i}`} className="text-sm text-gray-800">
+                                                    <span className="text-gray-500">{param.name}:</span> {displayValue}
+                                                  </p>
+                                              );
+                                            })}
+
+                                            {examSuggestions.systemicExamination?.map((param, i) => {
+                                              const displayValue = examValues[param.name] || `Normal: ${param.normalRange}`;
+                                              return (
+                                                  <p key={`sys-${i}`} className="text-sm text-gray-800">
+                                                    <span className="text-gray-500">{param.name}:</span> {displayValue}
+                                                  </p>
+                                              );
+                                            })}
+                                          </div>
+                                      ) : (
+                                          <p className="text-sm text-gray-400 italic">Not documented</p>
+                                      )}
+
+                                    </div>
+                                    <div className="bg-gray-50 rounded-lg p-4 border">
+                                      <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Occupation</h4>
+                                      <p className="text-sm text-gray-800">{activePatient?.occupation} </p>
+                                    </div>
+
                                   </div>
 
                                   <div className="p-4 bg-white border-t flex justify-between">
@@ -2454,7 +2591,7 @@ Based on the complete patient summary above (symptoms, manual history, negative 
                       <div className="bg-white p-6 rounded-xl border shadow-sm mt-6">
                         <h3 className="text-lg font-bold text-gray-800 mb-4">Pharmacy Inventory</h3>
 
-                          <div className="flex gap-2 mb-4">
+                          <div className="flex gap-2 mb-2">
                             <input
                                 type="text"
                                 placeholder="New medicine name"
@@ -2636,6 +2773,15 @@ Based on the complete patient summary above (symptoms, manual history, negative 
                             type="text"
                             value={hospitalInfo.contact}
                             onChange={(e) => updateHospitalInfo('contact', e.target.value)}
+                            className="w-full border rounded-lg p-2.5 text-sm mt-1"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold text-gray-700 uppercase">Email id</label>
+                        <input
+                            type="text"
+                            value={hospitalInfo.email}
+                            onChange={(e) => updateHospitalInfo('email', e.target.value)}
                             className="w-full border rounded-lg p-2.5 text-sm mt-1"
                         />
                       </div>
