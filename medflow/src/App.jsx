@@ -8,6 +8,14 @@ import {
   ActivitySquare,Settings
 } from 'lucide-react';
 
+import { createClient } from '@supabase/supabase-js';
+console.log('URL:', import.meta.env.VITE_SUPABASE_URL);
+console.log('ALL ENV:', import.meta.env);
+const supabase = createClient(
+    import.meta.env.VITE_SUPABASE_URL,
+    import.meta.env.VITE_SUPABASE_ANON_KEY
+);
+
 // --- Grok API Configuration ---
 const GROK_API_KEY = "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";
 
@@ -461,14 +469,16 @@ const CATEGORIES = [
   'Psychiatry',
 ];
 
-const ROLES = [
-  { id: 'admin', label: 'Admin', username: 'admin', password: 'ramesh123', tabs: ['reception', 'nursing', 'doctor', 'lab', 'review', 'pharmacy','settings'] },
-  { id: 'reception', label: 'Reception', username: 'reception', password: 'reception123', tabs: ['reception'] },
-  { id: 'nursing', label: 'Nursing Station', username: 'nurse', password: 'nurse123', tabs: ['nursing'] },
-  { id: 'doctor', label: 'Doctor / MO', username: 'doctor', password: 'doctor123', tabs: ['doctor'] },
-  { id: 'lab', label: 'Laboratory', username: 'lab', password: 'lab123', tabs: ['lab'] },
-  { id: 'pharmacy', label: 'Pharmacy', username: 'pharmacy', password: 'pharmacy123', tabs: ['pharmacy'] },
-];
+
+const ROLE_TABS = {
+  admin: ['reception', 'nursing', 'doctor', 'lab', 'review', 'pharmacy', 'settings'],
+  reception: ['reception'],
+  nursing: ['nursing'],
+  doctor: ['doctor'],
+  lab: ['lab'],
+  pharmacy: ['pharmacy'],
+};
+
 export default function MedFlowApp() {
 
 // Exam & Investigation Suggestion State
@@ -596,6 +606,20 @@ You MUST return your response as a valid JSON object matching exactly this schem
   const setExamValue = (name, value) => {
     setExamValues(prev => ({ ...prev, [name]: value }));
   };
+  const buildFinalExamValues = () => {
+    const final = { ...examValues };
+    (examSuggestions?.generalExamination || []).forEach(param => {
+      if (!final[param.name] || !final[param.name].trim()) {
+        final[param.name] = param.normalRange || 'Normal';
+      }
+    });
+    (examSuggestions?.systemicExamination || []).forEach(param => {
+      if (!final[param.name] || !final[param.name].trim()) {
+        final[param.name] = param.normalRange || 'Normal';
+      }
+    });
+    return final;
+  };
 
   const LAB_TEST_PARAMS = {
     "Complete Blood Count (CBC)": [
@@ -649,21 +673,85 @@ You MUST return your response as a valid JSON object matching exactly this schem
     );
     return found ? LAB_TEST_PARAMS[found] : [{ name: testName, ref: "" }];
   };
-  const [isLoggedIn, setIsLoggedIn] = useState(() => {
-    return localStorage.getItem('medflow_loggedIn') === 'true';
-  });
-  const [currentRole, setCurrentRole] = useState(() => {
-    const saved = localStorage.getItem('medflow_role');
-    return saved ? (saved) : null;
-  });
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [currentRole, setCurrentRole] = useState(null); // { role, fullName, hospitalId, hospitalName, tabs }
+  const [authLoading, setAuthLoading] = useState(true);
+
+  const loadProfile = async (userId) => {
+    const { data, error } = await supabase
+        .from('profiles')
+        .select('role, full_name, hospital_id, hospitals(name)')
+        .eq('id', userId)
+        .single();
+    if (error || !data) { setLoginError('No hospital profile found for this login.'); return; }
+    setCurrentRole({
+      role: data.role,
+      fullName: data.full_name,
+      hospitalId: data.hospital_id,
+      hospitalName: data.hospitals?.name,
+      tabs: ROLE_TABS[data.role] || [],
+    });
+    setIsLoggedIn(true);
+    setActiveTab((ROLE_TABS[data.role] || [])[0]);
+  };
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) loadProfile(session.user.id);
+      setAuthLoading(false);
+    });
+    const { data: listener } = supabase.auth.onAuthStateChange((_e, session) => {
+      if (session) loadProfile(session.user.id);
+      else { setIsLoggedIn(false); setCurrentRole(null); }
+    });
+    return () => listener.subscription.unsubscribe();
+  }, []);
+
   const [loginUsername, setLoginUsername] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
   const [loginError, setLoginError] = useState("");
   const [activeTab, setActiveTab] = useState('reception');
-  const [patients, setPatients] = useState(() => {
-    const saved = localStorage.getItem('medflow_patients');
-    return saved ? JSON.parse(saved) : INITIAL_PATIENTS;
+
+  const [patients, setPatients] = useState([]);
+
+  const mapDbPatientToUi = (row) => ({
+    id: row.display_id, dbId: row.id, name: row.name, age: row.age, gender: row.gender,
+    uhid: row.uhid, triage: row.triage, status: row.status, occupation: row.occupation,
+    address: row.address, complaint: row.complaint, vitals: row.vitals, diagnoses: row.diagnoses,
+    prescriptions: row.prescriptions, savedSymptoms: row.saved_symptoms,
+    savedNegativeHistory: row.saved_negative_history, savedInvestigations: row.saved_investigations,
+    savedExamValues: row.saved_exam_values, savedAiResult: row.saved_ai_result,
+    savedSelectedDdx: row.saved_selected_ddx, investigationsOrdered: row.investigations_ordered,
+    labStatus: row.lab_status, labResults: row.lab_results,
   });
+
+  const fetchPatients = async () => {
+    if (!currentRole?.hospitalId) return;
+    const { data, error } = await supabase
+        .from('patients').select('*')
+        .eq('hospital_id', currentRole.hospitalId)
+        .neq('status', 'Discharged')
+        .order('created_at', { ascending: false });
+    if (!error) setPatients(data.map(mapDbPatientToUi));
+  };
+
+// Live sync so Reception/Nursing/Doctor/Lab/Pharmacy all see updates instantly
+  useEffect(() => {
+    if (!currentRole?.hospitalId) return;
+    fetchPatients();
+    const channel = supabase
+        .channel(`patients-${currentRole.hospitalId}`)
+        .on('postgres_changes',
+            { event: '*', schema: 'public', table: 'patients', filter: `hospital_id=eq.${currentRole.hospitalId}` },
+            fetchPatients)
+        .subscribe();
+    return () => supabase.removeChannel(channel);
+  }, [currentRole?.hospitalId]);
+
+  const updatePatientInDb = async (dbId, patch) => {
+    const { error } = await supabase.from('patients').update(patch).eq('id', dbId);
+    if (error) console.error('Supabase update error:', error);
+  };
 
   // Reception Modal State
   const [showAddPatientModal, setShowAddPatientModal] = useState(false);
@@ -702,6 +790,7 @@ You MUST return your response as a valid JSON object matching exactly this schem
   const [prescriptions, setPrescriptions] = useState([]);
   const [aiRxLoading, setAiRxLoading] = useState(false);
   const [aiRxError, setAiRxError] = useState('');
+  const [nonPharmManagement, setNonPharmManagement] = useState([]);
 
   // Manual Medicine Input State
   const [medName, setMedName] = useState('');
@@ -709,46 +798,20 @@ You MUST return your response as a valid JSON object matching exactly this schem
   const [medDuration, setMedDuration] = useState('3 Days');
 
   // Pharmacy Inventory State
-  const [inventory, setInventory] = useState([
-    { id: 1, name: "Tab. Paracetamol 500mg", stock: 250, lowStockThreshold: 50 },
-    { id: 2, name: "Tab. Rifampicin 600mg", stock: 30, lowStockThreshold: 40 },
-    { id: 3, name: "Tab. Isoniazid 300mg", stock: 120, lowStockThreshold: 50 },
-    { id: 4, name: "Tab. Pyrazinamide 1500mg", stock: 80, lowStockThreshold: 30 },
-    { id: 5, name: "Tab. Ethambutol 1200mg", stock: 15, lowStockThreshold: 30 },
-    { id: 6, name: "Inj. Streptomycin 1g IM", stock: 10, lowStockThreshold: 20 },
-    { id: 7, name: "Tab. Amoxicillin 500mg", stock: 200, lowStockThreshold: 40 },
-    { id: 8, name: "Tab. Azithromycin 500mg", stock: 100, lowStockThreshold: 30 },
-    { id: 9, name: "Tab. Ciprofloxacin 500mg", stock: 150, lowStockThreshold: 40 },
-    { id: 10, name: "Cap. Doxycycline 100mg", stock: 90, lowStockThreshold: 30 },
-    { id: 11, name: "Tab. Metronidazole 400mg", stock: 180, lowStockThreshold: 40 },
-    { id: 12, name: "Tab. Ibuprofen 400mg", stock: 200, lowStockThreshold: 40 },
-    { id: 13, name: "Tab. Diclofenac 50mg", stock: 150, lowStockThreshold: 30 },
-    { id: 14, name: "Tab. Omeprazole 20mg", stock: 220, lowStockThreshold: 40 },
-    { id: 15, name: "Tab. Pantoprazole 40mg", stock: 180, lowStockThreshold: 40 },
-    { id: 16, name: "Tab. Ranitidine 150mg", stock: 100, lowStockThreshold: 30 },
-    { id: 17, name: "Tab. Ondansetron 4mg", stock: 120, lowStockThreshold: 30 },
-    { id: 18, name: "Tab. Cetirizine 10mg", stock: 200, lowStockThreshold: 30 },
-    { id: 19, name: "Tab. Amlodipine 5mg", stock: 150, lowStockThreshold: 30 },
-    { id: 20, name: "Tab. Atenolol 50mg", stock: 100, lowStockThreshold: 30 },
-    { id: 21, name: "Tab. Metformin 500mg", stock: 200, lowStockThreshold: 40 },
-    { id: 22, name: "Tab. Glimepiride 2mg", stock: 100, lowStockThreshold: 30 },
-    { id: 23, name: "Tab. Atorvastatin 10mg", stock: 150, lowStockThreshold: 30 },
-    { id: 24, name: "Syp. Cough Syrup", stock: 80, lowStockThreshold: 20 },
-    { id: 25, name: "ORS Sachets", stock: 300, lowStockThreshold: 50 },
-    { id: 26, name: "IV Fluid NS 500ml", stock: 100, lowStockThreshold: 20 },
-    { id: 27, name: "IV Fluid RL 500ml", stock: 100, lowStockThreshold: 20 },
-    { id: 28, name: "Inj. Ceftriaxone 1g", stock: 60, lowStockThreshold: 20 },
-    { id: 29, name: "Tab. Folic Acid 5mg", stock: 200, lowStockThreshold: 30 },
-    { id: 30, name: "Tab. Iron (Ferrous Sulfate)", stock: 200, lowStockThreshold: 30 },
-  ]);
+  // Pharmacy Inventory State — now loaded from Supabase per hospital
+  const [inventory, setInventory] = useState([]);
+  useEffect(() => {
+    if (!currentRole?.hospitalId) return;
+    supabase.from('inventory').select('*').eq('hospital_id', currentRole.hospitalId)
+        .then(({ data }) => data && setInventory(data));
+  }, [currentRole?.hospitalId]);
+
   const [editingStockId, setEditingStockId] = useState(null);
   const [stockInput, setStockInput] = useState("");
   const [newMedName, setNewMedName] = useState("");
   const [newMedStock, setNewMedStock] = useState("");
 
-  useEffect(() => {
-    localStorage.setItem('medflow_patients', JSON.stringify(patients));
-  }, [patients]);
+
   const activePatient = patients.find(p => p.id === selectedPatientId);
   useEffect(() => {
     if (activePatient?.savedSymptoms) {
@@ -805,7 +868,7 @@ You MUST return your response as a valid JSON object matching exactly this schem
       setNewPatientAge('');
     }
   };
-  const handleAddPatient = (e) => {
+  const handleAddPatient = async (e) => {
     e.preventDefault();
 
     // Follow-up: reactivate existing patient by UHID or name
@@ -841,19 +904,17 @@ You MUST return your response as a valid JSON object matching exactly this schem
 
     // New patient
     if (!newPatientName.trim()) return;
-    const newPt = {
-      id: `#${Math.floor(Math.random() * 90 + 10)}`,
-      name: newPatientName,
-      age: `${newPatientAge}y`,
-      gender: newPatientGender,
+
+    const { data: inserted, error } = await supabase.from('patients').insert({
+      hospital_id: currentRole.hospitalId,
+      display_id: `#${Math.floor(Math.random() * 9000 + 10)}`,
+      name: newPatientName, age: `${newPatientAge}y`, gender: newPatientGender,
       uhid: `EHR${Math.floor(Math.random() * 900000 + 100000)}`,
-      triage: newPatientTriage,
-      status: 'Nursing',
-      occupation: newPatientOccupation || '',
-      address: newPatientAddress || '',
-      vitals: null,
-    };
-    setPatients([newPt, ...patients]);
+      triage: newPatientTriage, status: 'Nursing',
+      occupation: newPatientOccupation || '', address: newPatientAddress || '', vitals: null,
+    }).select().single();
+    if (!error) setPatients([mapDbPatientToUi(inserted), ...patients]);
+
     setNewPatientName('');
     setNewPatientAge('');
     setNewPatientOccupation('');
@@ -875,7 +936,12 @@ You MUST return your response as a valid JSON object matching exactly this schem
   const forwardToDoctor = (patientId) => {
     const defaultVitals = { bp: '120/80', pulse: '78', temp: '98.6', spo2: '98' };
     const vitals = vitalInputs[patientId] || patients.find(p => p.id === patientId)?.vitals || defaultVitals;
+
+    const target = patients.find(p => p.id === patientId);
     setPatients(patients.map(p => p.id === patientId ? { ...p, status: 'Doctor', vitals } : p));
+    updatePatientInDb(target.dbId, { status: 'Doctor', vitals });
+
+
     setVitalInputs(prev => {
       const newState = {...prev};
       delete newState[patientId];
@@ -889,6 +955,7 @@ You MUST return your response as a valid JSON object matching exactly this schem
       setSelectedSymptoms(selectedSymptoms.filter(s => s.id !== symptom.id));
     } else {
       setSelectedSymptoms([...selectedSymptoms, symptom]);
+      setSymptomSearch('');
     }
   };
 
@@ -1029,7 +1096,7 @@ Based on the complete patient summary above (symptoms, manual history, negative 
               investigationsOrdered: mergedInvestigations,
               savedNegativeHistory: selectedNegativeHistory || [],
               savedInvestigations: mergedInvestigations,
-              savedExamValues: examValues || {},
+              savedExamValues: buildFinalExamValues(),
               savedSymptoms: selectedSymptoms,
               savedAiResult: aiResult,
               savedSelectedDdx: selectedDdx,
@@ -1050,7 +1117,7 @@ Based on the complete patient summary above (symptoms, manual history, negative 
               investigationsOrdered: selectedInvestigations || [],
               savedNegativeHistory: selectedNegativeHistory || [],
               savedInvestigations: selectedInvestigations || [],
-              savedExamValues: examValues || {},
+              savedExamValues: buildFinalExamValues(),
               savedSymptoms: selectedSymptoms,
               savedAiResult: aiResult,
               savedSelectedDdx: selectedDdx,
@@ -1073,11 +1140,12 @@ Based on the complete patient summary above (symptoms, manual history, negative 
     ));
   };
 
-    const acceptDiagnosis = () => {
-      if (selectedDdx.length === 0) return;
-      setAcceptedDiagnosis(selectedDdx);
-      setConsultStep('plan');
-    };
+  const acceptDiagnosis = () => {
+    if (selectedDdx.length === 0) return;
+    setAcceptedDiagnosis(selectedDdx);
+    setNonPharmManagement([]);
+    setConsultStep('plan');
+  };
 
     const generateAIPrescription = async () => {
       if (acceptedDiagnosis.length === 0) return;
@@ -1086,12 +1154,14 @@ Based on the complete patient summary above (symptoms, manual history, negative 
 
       const diagnosisList = acceptedDiagnosis.join(', ');
       const promptText = `
-      You are an expert physician writing a standard, evidence-based prescription.
+      You are an expert physician writing a complete, evidence-based treatment plan.
       Patient Profile: ${activePatient?.age}, ${activePatient?.gender}.
       Final Diagnosis: ${diagnosisList}.
       
-      Generate a standard, safe medical prescription (pharmacological treatment) appropriate for this diagnosis based on current clinical guidelines.
-      Include proper drug names, dosages, durations, and instructions.
+      Generate a complete management plan for this diagnosis based on current clinical guidelines, including:
+      1. "medications" - standard pharmacological prescription with proper drug names, dosages, durations, and instructions.
+      2. "nonPharmacological" - non-drug management: lifestyle/diet advice, physiotherapy, wound care, monitoring instructions, referral advice, etc.
+      3. "proceduralManagement" - any surgical or procedural interventions indicated for this diagnosis (e.g., incision & drainage, suturing, splinting, referral for surgery). If none are indicated, return an empty array.
       
       You MUST return your response as a valid JSON object matching exactly this schema (no markdown formatting):
       {
@@ -1102,7 +1172,9 @@ Based on the complete patient summary above (symptoms, manual history, negative 
             "duration": "e.g., 3 Days",
             "note": "e.g., After meals"
           }
-        ]
+        ],
+        "nonPharmacological": ["Advice 1", "Advice 2"],
+        "proceduralManagement": ["Procedure 1", "Procedure 2"]
       }
     `;
 
@@ -1130,16 +1202,21 @@ Based on the complete patient summary above (symptoms, manual history, negative 
       const data = await response.json();
       const resultText = data.choices?.[0]?.message?.content;
 
-      if (resultText) {
-        const parsedResult = JSON.parse(resultText);
-        const newMeds = parsedResult.medications.map((m, index) => ({
-          id: Date.now() + index,
-          ...m
-        }));
-        setPrescriptions(newMeds);
-      } else {
-        setAiRxError("AI Engine returned an empty prescription.");
-      }
+        if (resultText) {
+          const parsedResult = JSON.parse(resultText);
+          const newMeds = (parsedResult.medications || []).map((m, index) => ({
+            id: Date.now() + index,
+            ...m
+          }));
+          setPrescriptions(newMeds);
+          setNonPharmManagement([
+            ...(parsedResult.nonPharmacological || []).map(t => ({ type: 'Advice', text: t })),
+            ...(parsedResult.proceduralManagement || []).map(t => ({ type: 'Procedure', text: t })),
+          ]);
+        } else {
+          setAiRxError("AI Engine returned an empty prescription.");
+        }
+
     } catch (err) {
     console.error(err);
     setAiRxError("Failed to generate AI Prescription. Please try again.");
@@ -1164,23 +1241,23 @@ Based on the complete patient summary above (symptoms, manual history, negative 
       setPrescriptions(prescriptions.filter(m => m.id !== id));
     };
 
-    const finishConsultation = () => {
-      if (!activePatient) return;
-      setPatients(patients.map(p => {
-        if (p.id === activePatient.id) {
-          return {
-            ...p,
-            status: 'Pharmacy',
-            diagnoses: acceptedDiagnosis,
-            prescriptions: prescriptions
-          };
-        }
-        return p;
-      }));
-      setSelectedPatientId(null);
-      setActiveTab('pharmacy');
-    };
-
+  const finishConsultation = () => {
+    if (!activePatient) return;
+    setPatients(patients.map(p => {
+      if (p.id === activePatient.id) {
+        return {
+          ...p,
+          status: 'Pharmacy',
+          diagnoses: acceptedDiagnosis,
+          prescriptions: prescriptions,
+          nonPharmManagement: nonPharmManagement
+        };
+      }
+      return p;
+    }));
+    setSelectedPatientId(null);
+    setActiveTab('pharmacy');
+  };
     // --- Pharmacy Actions ---
     const dispenseMedication = (patientId) => {
       setPatients(patients.map(p => {
@@ -1214,6 +1291,10 @@ Based on the complete patient summary above (symptoms, manual history, negative 
   };
 
     const printPrescription = (patient) => {
+
+      const nonPharmHtml = (patient.nonPharmManagement || []).map(item => `
+        <li style="margin-bottom:4px;"><b>[${item.type}]</b> ${item.text}</li>
+      `).join('');
       const medsHtml = (patient.prescriptions || []).map(m => `
         <tr>
             <td style="padding:8px;border-bottom:1px solid #ddd;">${m.name}</td>
@@ -1271,6 +1352,7 @@ Based on the complete patient summary above (symptoms, manual history, negative 
             </div>
             
             <h4 style="margin:0 0 10px 0; color:#333; text-align: left;">PRESCRIPTION (Rx)</h4>
+            
             <table style="width:100%; border-collapse:collapse; margin-top:20px;">
                 <thead>
                     <tr style="background:#eee; text-align:left;">
@@ -1282,39 +1364,41 @@ Based on the complete patient summary above (symptoms, manual history, negative 
                 </thead>
                 <tbody>${medsHtml}</tbody>
             </table>
+            ${nonPharmHtml ? `
+            <div style="margin-top: 20px;">
+                <h4 style="margin:0 0 8px 0; color:#333;">NON-PHARMACOLOGICAL & PROCEDURAL MANAGEMENT</h4>
+                <ul style="padding-left: 18px; font-size: 13px;">${nonPharmHtml}</ul>
+            </div>` : ''}
             <br/><br/>
             <p style="text-align:right;">Doctor's Signature: ___________________</p>
+            
         </body>
         </html>
     `);
       printWindow.document.close();
       printWindow.print();
     };
-  const handleLogin = (e) => {
+  const handleLogin = async (e) => {
     e.preventDefault();
-    const role = ROLES.find(
-        r => r.username === loginUsername && r.password === loginPassword
-    );
-    if (role) {
-      setCurrentRole(role);
-      setIsLoggedIn(true);
-      setLoginError("");
-      setActiveTab(role.tabs[0]);
-      localStorage.setItem('medflow_loggedIn', 'true');
-      localStorage.setItem('medflow_role', JSON.stringify(role));
-    } else {
-      setLoginError("Invalid username or password");
-    }
+    setLoginError('');
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: loginUsername, // staff log in with their email now
+      password: loginPassword,
+    });
+    if (error) { setLoginError('Invalid username or password'); return; }
+    await loadProfile(data.user.id);
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
     setIsLoggedIn(false);
     setCurrentRole(null);
-    setLoginUsername("");
-    setLoginPassword("");
+    setLoginUsername('');
+    setLoginPassword('');
     localStorage.removeItem('medflow_loggedIn');
     localStorage.removeItem('medflow_role');
   };
+
     const SidebarItem = ({icon: Icon, label, id, step}) => (
         <button onClick={() => setActiveTab(id)}
                 className={`w-full flex items-center px-4 py-3 text-sm font-medium transition-colors ${activeTab === id ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-slate-700 hover:text-white'}`}>
@@ -2450,6 +2534,23 @@ Based on the complete patient summary above (symptoms, manual history, negative 
 
                                     <div className="bg-white rounded-xl border border-dashed border-gray-300 p-4 shadow-sm">
                                       <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Add Medication Manually</h4>
+                                      {nonPharmManagement.length > 0 && (
+                                          <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
+                                            <div className="p-3 bg-amber-50 border-b">
+                                              <h4 className="text-sm font-bold text-gray-700 uppercase">Non-Pharmacological & Procedural Management</h4>
+                                            </div>
+                                            <ul className="divide-y">
+                                              {nonPharmManagement.map((item, idx) => (
+                                                  <li key={idx} className="p-3 flex items-start gap-2">
+                                                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full flex-shrink-0 mt-0.5 ${
+                                                      item.type === 'Procedure' ? 'bg-purple-100 text-purple-700' : 'bg-amber-100 text-amber-700'
+                                                  }`}>{item.type}</span>
+                                                    <span className="text-sm text-gray-800">{item.text}</span>
+                                                  </li>
+                                              ))}
+                                            </ul>
+                                          </div>
+                                      )}
                                       <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
                                         <div className="sm:col-span-5">
                                           <input type="text" placeholder="Medicine Name (e.g., Tab. Azithromycin 500mg)" value={medName} onChange={e => setMedName(e.target.value)} className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none"/>
