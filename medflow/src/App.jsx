@@ -863,11 +863,34 @@ You MUST return your response as a valid JSON object matching exactly this schem
       setNewPatientName(found.name);
       setNewPatientAge(found.age.replace('y', ''));
       setNewPatientGender(found.gender);
+      setNewPatientAddress(found.address || '');
+      setNewPatientOccupation(found.occupation || '');
     } else {
       setNewPatientName('');
       setNewPatientAge('');
+      setNewPatientAddress('');
+      setNewPatientOccupation('');
     }
   };
+  const generateNextUhid = async () => {
+    const year = new Date().getFullYear();
+    const prefix = `CHCD/${year}/`;
+    const { data } = await supabase
+        .from('patients')
+        .select('uhid')
+        .eq('hospital_id', currentRole.hospitalId)
+        .like('uhid', `${prefix}%`)
+        .order('uhid', { ascending: false })
+        .limit(1);
+
+    let nextNum = 3000; // starting point => 003000
+    if (data && data.length > 0) {
+      const lastNum = parseInt(data[0].uhid.split('/').pop(), 10);
+      if (!isNaN(lastNum)) nextNum = lastNum + 1;
+    }
+    return `${prefix}${String(nextNum).padStart(6, '0')}`;
+  };
+
   const handleAddPatient = async (e) => {
     e.preventDefault();
 
@@ -905,11 +928,13 @@ You MUST return your response as a valid JSON object matching exactly this schem
     // New patient
     if (!newPatientName.trim()) return;
 
+    const newUhid = await generateNextUhid();
+
     const { data: inserted, error } = await supabase.from('patients').insert({
       hospital_id: currentRole.hospitalId,
       display_id: `#${Math.floor(Math.random() * 9000 + 10)}`,
       name: newPatientName, age: `${newPatientAge}y`, gender: newPatientGender,
-      uhid: `EHR${Math.floor(Math.random() * 900000 + 100000)}`,
+      uhid: newUhid,
       triage: newPatientTriage, status: 'Nursing',
       occupation: newPatientOccupation || '', address: newPatientAddress || '', vitals: null,
     }).select().single();
