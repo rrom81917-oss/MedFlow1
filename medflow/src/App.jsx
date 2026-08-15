@@ -1,11 +1,10 @@
-import React, { useState, useEffect } from 'react';
 import {
   Activity, Users, Stethoscope, FlaskConical,
   ClipboardCheck, Pill, Search, Plus,
   ArrowRight, HeartPulse, BrainCircuit,
   CheckCircle2, AlertTriangle, User, LogOut,
   Sparkles, Trash2, Mic, FileText, Check, ChevronRight,
-  ActivitySquare,Settings
+  ActivitySquare, Settings, BedDouble
 } from 'lucide-react';
 
 import { createClient } from '@supabase/supabase-js';
@@ -15,7 +14,7 @@ const supabase = createClient(
     import.meta.env.VITE_SUPABASE_URL,
     import.meta.env.VITE_SUPABASE_ANON_KEY
 );
-
+import React, { useState, useEffect } from 'react';
 // --- Grok API Configuration ---
 const GROK_API_KEY = "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";
 
@@ -471,10 +470,11 @@ const CATEGORIES = [
 
 
 const ROLE_TABS = {
-  admin: ['reception', 'nursing', 'doctor', 'lab', 'review', 'pharmacy', 'settings'],
+  admin: ['reception', 'nursing', 'doctor',  'ipd', 'lab', 'review', 'pharmacy', 'settings'],
   reception: ['reception'],
   nursing: ['nursing'],
   doctor: ['doctor'],
+  ipd: ['ipd'],
   lab: ['lab'],
   pharmacy: ['pharmacy'],
 };
@@ -512,8 +512,8 @@ export default function MedFlowApp() {
     }).join(', ');
 
     const examPromptText = `
-You are an expert Consultant Physician AI. Based on the patient data below, suggest
-relevant clinical documentation to help the doctor complete a thorough workup.
+const examPromptText = \`
+You are a multi-disciplinary panel of senior consultants — General Medicine, Cardiology, Nephrology, Rhematology, Respiratory Meicine, Oncology , General Surgery, Obstetrics & Gynecology, Pediatrics, Orthopedics, ENT, Dermatology, Psychiatry, and Emergency Medicine — reasoning together as a single expert AI. Apply whichever specialty the presenting complaint and symptoms actually belong to, at full specialist depth — do not default to general medicine reasoning for an OBG, surgical, pediatric, or psychiatric case. For obstetric/gynecological presentations specifically, reason to the standard of Williams Obstetrics, Dutta's Textbook of Obstetrics, and Shaw's Textbook of Gynecology (gravida/para status, gestational age, obstetric red flags, standard antenatal/intrapartum/postnatal workups). Based on the patient data below, suggest relevant clinical documentation to help the doctor complete a thorough workup.
 
 Patient Profile: ${activePatient?.age}, ${activePatient?.gender}, ${activePatient?.occupation}.
 Chief Complaint: ${activePatient?.complaint}.
@@ -667,16 +667,212 @@ You MUST return your response as a valid JSON object matching exactly this schem
   ],
   };
 
+  const TEST_CATEGORY_KEYWORDS = {
+    Radiology: ['x-ray', 'xray', 'usg', 'ultrasound', 'ct scan', 'ct ', 'mri', 'sonography', 'doppler', 'echo', 'ecg', 'ekg', 'mammography', 'fluoroscopy'],
+    Microbiology: ['culture', 'sensitivity', 'gram stain', 'afb', 'widal', 'malaria', 'dengue', 'covid', 'rapid antigen', 'stool routine', 'urine routine', 'urine culture', 'blood culture', 'sputum'],
+    Biochemistry: ['lft', 'rft', 'blood sugar', 'rbs', 'fbs', 'ppbs', 'hba1c', 'lipid', 'creatinine', 'urea', 'electrolyte', 'calcium', 'uric acid', 'amylase', 'lipase', 'troponin', 'cardiac'],
+    Pathology: ['cbc', 'esr', 'hemoglobin', 'platelet', 'coagulation', 'pt', 'inr', 'aptt', 'peripheral smear', 'biopsy', 'histopathology', 'cytology', 'bone marrow'],
+  };
+
+  const getTestCategory = (testName) => {
+    const lower = (testName || '').toLowerCase();
+    for (const [category, keywords] of Object.entries(TEST_CATEGORY_KEYWORDS)) {
+      if (keywords.some(kw => lower.includes(kw))) return category;
+    }
+    return 'Other';
+  };
+
   const getTestParams = (testName) => {
     const found = Object.keys(LAB_TEST_PARAMS).find(key =>
         testName.toLowerCase().includes(key.toLowerCase().split(' (')[0].toLowerCase())
     );
     return found ? LAB_TEST_PARAMS[found] : [{ name: testName, ref: "" }];
   };
+
+  const collectTestResults = (patientId, testEntries) => {
+    return testEntries.map(({ inv, idx }) => {
+      const params = getTestParams(inv);
+      const paramResults = params.map((param, pIdx) => {
+        const valEl = document.getElementById(`lab-val-${patientId}-${idx}-${pIdx}`);
+        const refEl = document.getElementById(`lab-ref-${patientId}-${idx}-${pIdx}`);
+        const val = valEl ? valEl.value : '';
+        const ref = refEl ? refEl.value : '';
+        return `${param.name}: ${val || 'N/A'} (Ref: ${ref || 'N/A'})`;
+      }).join(', ');
+      return `${inv} [${paramResults}]`;
+    }).join('; ');
+  };
+
+  const sendLabSection = (patient, section) => {
+    // section: 'radiology' ke 'diaglab'
+    const invList = patient.investigationsOrdered && patient.investigationsOrdered.length > 0 ? patient.investigationsOrdered : ['General Test'];
+    const entries = invList
+        .map((inv, idx) => ({ inv, idx }))
+        .filter(({ inv }) => (section === 'radiology' ? getTestCategory(inv) === 'Radiology' : getTestCategory(inv) !== 'Radiology'));
+    if (entries.length === 0) return;
+
+    const combined = collectTestResults(patient.id, entries);
+    const images = section === 'radiology' ? (radiologyImages[patient.id] || []) : [];
+    const sectionLabel = section === 'radiology' ? 'RADIOLOGY' : 'DIAGNOSTIC LAB (Path/Micro/Biochem)';
+
+    const hasRadiology = invList.some(inv => getTestCategory(inv) === 'Radiology');
+    const hasDiagLab = invList.some(inv => getTestCategory(inv) !== 'Radiology');
+
+    setPatients(prev => prev.map(p => {
+      if (p.id !== patient.id) return p;
+      const appended = `${sectionLabel}: ${combined}`;
+      const newResults = p.labResults ? `${p.labResults}; ${appended}` : appended;
+      const radiologyDone = section === 'radiology' ? true : p.radiologyDone;
+      const diagLabDone = section === 'diaglab' ? true : p.diagLabDone;
+      const overallDone = (!hasRadiology || radiologyDone) && (!hasDiagLab || diagLabDone);
+      return {
+        ...p,
+        labResults: newResults,
+        labImages: section === 'radiology' ? [...(p.labImages || []), ...images] : (p.labImages || []),
+        radiologyDone,
+        diagLabDone,
+        status: overallDone ? 'Doctor' : p.status,
+        labStatus: overallDone ? 'Completed' : 'Pending',
+      };
+    }));
+
+    if (section === 'radiology') {
+      setRadiologyImages(prev => {
+        const next = { ...prev };
+        delete next[patient.id];
+        return next;
+      });
+    }
+  };
+
+  const IV_KEYWORDS = ['inj.', 'inj ', 'injection', ' iv ', 'i.v.', 'intravenous', 'infusion', 'drip', 'iv fluid', 'ivf', 'blood transfusion',
+
+    // Surgical & Major Procedures
+    'surgery', 'surgical', 'operation', 'ot', 'suturing', 'stitch', 'incision', 'drainage', 'biopsy', 'excise', 'excision',
+
+    // OBGYN & Delivery
+    'delivery', 'lscs', 'c-section', 'caesar', 'abortion', 'mvr', 'dilation', 'curettage', 'd&c', 'episiotomy',
+
+    // Orthopedics
+    'fracture', 'reduction', 'plaster', 'pop', 'slab', 'casting', 'nailing', 'plating', 'implant', 'arthroscopy', 'joint replacement',
+
+    // Ophthalmology & ENT
+    'cataract', 'iols', 'lasik', 'glaucoma surgery', 'tympanoplasty', 'septoplasty', 'tonsillectomy', 'mastoidectomy', 'fess', 'foreign body removal',
+
+    // General IPD Triggers / Monitoring
+    'admission', 'ipd', 'observation', 'catheter', 'rt insertion', 'ryle\'s tube', 'icustay', 'icu'
+  ];
+
+  const requiresIVAdmission = (meds = [], procedures = []) => {
+    const medsFlag = meds.some(m => {
+      const text = `${m.name} ${m.note || ''} ${m.dosage || ''}`.toLowerCase();
+      return IV_KEYWORDS.some(kw => text.includes(kw));
+    });
+    const procFlag = procedures.some(pr => {
+      const text = `${pr.text || pr.name || ''}`.toLowerCase();
+      return IV_KEYWORDS.some(kw => text.includes(kw));
+    });
+    return medsFlag || procFlag;
+  };
+
+  const matchesSearch = (patient, query) => {
+    if (!query || !query.trim()) return true;
+    const q = query.trim().toLowerCase();
+    return (patient.name || '').toLowerCase().includes(q) ||
+        (patient.uhid || '').toLowerCase().includes(q);
+  };
+  const [ipdPrinted, setIpdPrinted] = useState({});
+
+  const printIpdCasePaper = (patient) => {
+    const daysHtml = (patient.dailyOrders || []).map(day => `
+    <div style="margin-bottom:16px;">
+      <h4 style="background:#f3f4f6; padding:6px 10px; margin:0 0 6px 0;">${day.label}</h4>
+      <p style="font-size:13px;"><b>Medications:</b> ${(day.meds || []).map(m => `${m.name} (${m.dosage}, ${m.duration})`).join('; ') || 'None'}</p>
+      <p style="font-size:13px;"><b>Advice:</b> ${(day.advice || []).map(a => a.text).join('; ') || 'None'}</p>
+      <p style="font-size:13px;"><b>Procedures:</b> ${(day.procedures || []).map(pr => pr.text).join('; ') || 'None'}</p>
+    </div>
+  `).join('');
+    const printWindow = window.open('', '_blank');
+    printWindow.document.write(`
+    <html><head><title>IPD Case Paper - ${patient.name}</title></head>
+    <body style="font-family: Arial, sans-serif; padding: 30px;">
+      <div style="text-align:center; border-bottom:2px solid #333; padding-bottom:10px; margin-bottom:20px;">
+        <h2 style="margin:0;">${hospitalInfo.name}</h2>
+        <p style="margin:2px 0; font-size:13px;">${hospitalInfo.address}</p>
+      </div>
+      <p><b>Patient:</b> ${patient.name} | <b>UHID:</b> ${patient.uhid} | <b>Age/Sex:</b> ${patient.age}/${patient.gender}</p>
+      <p><b>Diagnosis:</b> ${(patient.diagnoses || []).join(', ')}</p>
+      <hr/><h3>IPD Day-wise Orders</h3>
+      ${daysHtml || '<p>No day-wise orders recorded.</p>'}
+      <br/><p style="text-align:right;">Doctor's Signature: ___________________</p>
+    </body></html>
+  `);
+    printWindow.document.close();
+    printWindow.print();
+  };
+
+  const [clinicalImages, setClinicalImages] = useState([]);
+
+  const handleImageUpload = (e) => {
+    const files = Array.from(e.target.files || []);
+    files.forEach(file => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        setClinicalImages(prev => [...prev, { id: Date.now() + Math.random(), name: file.name, dataUrl: reader.result }]);
+      };
+      reader.readAsDataURL(file);
+    });
+    e.target.value = '';
+  };
+
+  const removeClinicalImage = (id) => {
+    setClinicalImages(prev => prev.filter(img => img.id !== id));
+  };
+
+  const [isListening, setIsListening] = useState(false);
+  const [negativeHistoryAnswers, setNegativeHistoryAnswers] = useState({});
+
+  const setNegativeHistoryAnswer = (item, answer) => {
+    setNegativeHistoryAnswers(prev => {
+      // Jo same answer par fari click karyu, to clear kari devu (back to unknown/unasked)
+      if (prev[item] === answer) {
+        const next = { ...prev };
+        delete next[item];
+        setSelectedNegativeHistory(list => list.filter(i => i !== item));
+        return next;
+      }
+      setSelectedNegativeHistory(list => {
+        const withoutItem = list.filter(i => i !== item);
+        return answer === 'no' ? [...withoutItem, item] : withoutItem;
+      });
+      return { ...prev, [item]: answer };
+    });
+  };
+
+
+  const startVoiceInput = () => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      alert('Voice input is not supported in this browser. Please use Chrome.');
+      return;
+    }
+    const recognition = new SpeechRecognition();
+    recognition.lang = 'en-IN';
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    recognition.onstart = () => setIsListening(true);
+    recognition.onend = () => setIsListening(false);
+    recognition.onerror = () => setIsListening(false);
+    recognition.onresult = (event) => {
+      const transcript = event.results[0][0].transcript;
+      setManualHistory(prev => prev ? `${prev} ${transcript}` : transcript);
+    };
+    recognition.start();
+  };
+
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [currentRole, setCurrentRole] = useState(null); // { role, fullName, hospitalId, hospitalName, tabs }
   const [authLoading, setAuthLoading] = useState(true);
-
   const loadProfile = async (userId) => {
     const { data, error } = await supabase
         .from('profiles')
@@ -717,12 +913,14 @@ You MUST return your response as a valid JSON object matching exactly this schem
   const mapDbPatientToUi = (row) => ({
     id: row.display_id, dbId: row.id, name: row.name, age: row.age, gender: row.gender,
     uhid: row.uhid, triage: row.triage, status: row.status, occupation: row.occupation,
-    address: row.address, complaint: row.complaint, vitals: row.vitals, diagnoses: row.diagnoses,
+    address: row.address, insuranceId: row.insurance_id, contact: row.contact,
+    complaint: row.complaint, vitals: row.vitals, diagnoses: row.diagnoses,
     prescriptions: row.prescriptions, savedSymptoms: row.saved_symptoms,
     savedNegativeHistory: row.saved_negative_history, savedInvestigations: row.saved_investigations,
     savedExamValues: row.saved_exam_values, savedAiResult: row.saved_ai_result,
     savedSelectedDdx: row.saved_selected_ddx, investigationsOrdered: row.investigations_ordered,
     labStatus: row.lab_status, labResults: row.lab_results,
+    dailyOrders: row.daily_orders || [],
   });
 
   const fetchPatients = async () => {
@@ -762,6 +960,42 @@ You MUST return your response as a valid JSON object matching exactly this schem
   const [newPatientOccupation, setNewPatientOccupation] = useState('');
   const [followUpUhid, setFollowUpUhid] = useState("");
   const [newPatientAddress, setNewPatientAddress] = useState('');
+  const [newPatientInsuranceId, setNewPatientInsuranceId] = useState('');
+  const [newPatientContact, setNewPatientContact] = useState('');
+  const [receptionSearch, setReceptionSearch] = useState('');
+  const [nursingSearch, setNursingSearch] = useState('');
+  const [doctorQueueSearch, setDoctorQueueSearch] = useState('');
+  const [ipdSearch, setIpdSearch] = useState('');
+  const [ipdActiveDayMap, setIpdActiveDayMap] = useState({});     // { [patientId]: dayId }
+  const [ipdMedInputs, setIpdMedInputs] = useState({});           // { [patientId]: { name, dosage, duration } }
+  const [ipdAdviceInputs, setIpdAdviceInputs] = useState({});// { [patientId]: adviceText }
+  const [ipdProcedureInputs, setIpdProcedureInputs] = useState({}); // { [patientId]: procedureText }
+  const [pharmacySearch, setPharmacySearch] = useState('');
+  const [labSearch, setLabSearch] = useState('');
+  const [labCategoryFilter, setLabCategoryFilter] = useState('All');
+  const [radiologyImages, setRadiologyImages] = useState({}); // { [patientId]: [{id, name, dataUrl}] }
+
+  const handleRadiologyImageUpload = (patientId, e) => {
+    const files = Array.from(e.target.files || []);
+    files.forEach(file => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        setRadiologyImages(prev => ({
+          ...prev,
+          [patientId]: [...(prev[patientId] || []), { id: Date.now() + Math.random(), name: file.name, dataUrl: reader.result }],
+        }));
+      };
+      reader.readAsDataURL(file);
+    });
+    e.target.value = '';
+  };
+
+  const removeRadiologyImage = (patientId, imgId) => {
+    setRadiologyImages(prev => ({
+      ...prev,
+      [patientId]: (prev[patientId] || []).filter(img => img.id !== imgId),
+    }));
+  };
 
   // Nursing Station Vitals Input State
   const [vitalInputs, setVitalInputs] = useState({});
@@ -787,10 +1021,17 @@ You MUST return your response as a valid JSON object matching exactly this schem
 
   // Prescription State
   const [acceptedDiagnosis, setAcceptedDiagnosis] = useState([]);
+  const [manualDiagnosis, setManualDiagnosis] = useState('');
+  const [followUpAdvice, setFollowUpAdvice] = useState('');
   const [prescriptions, setPrescriptions] = useState([]);
   const [aiRxLoading, setAiRxLoading] = useState(false);
   const [aiRxError, setAiRxError] = useState('');
   const [nonPharmManagement, setNonPharmManagement] = useState([]);
+  const [manualAdviceInput, setManualAdviceInput] = useState('');
+  const [manualProcedureInput, setManualProcedureInput] = useState('');
+  const [aiRouteOfCare, setAiRouteOfCare] = useState(null); // 'OPD' | 'IPD' | null
+  const [routeOverride, setRouteOverride] = useState(null); // doctor's manual override
+  const [planSubTab, setPlanSubTab] = useState('rx'); // 'rx' | 'procedures' | 'nonpharm' | 'followup'
 
   // Manual Medicine Input State
   const [medName, setMedName] = useState('');
@@ -817,6 +1058,9 @@ You MUST return your response as a valid JSON object matching exactly this schem
     if (activePatient?.savedSymptoms) {
       setSelectedSymptoms(activePatient.savedSymptoms);
       setSelectedNegativeHistory(activePatient.savedNegativeHistory || []);
+      const restoredAnswers = {};
+      (activePatient.savedNegativeHistory || []).forEach(item => { restoredAnswers[item] = 'no'; });
+      setNegativeHistoryAnswers(restoredAnswers);
       setSelectedInvestigations(activePatient.savedInvestigations || []);
       setExamValues(activePatient.savedExamValues || {});
       setAiResult(activePatient.savedAiResult || null);
@@ -825,6 +1069,7 @@ You MUST return your response as a valid JSON object matching exactly this schem
     } else {
       setSelectedSymptoms([]);
       setSelectedNegativeHistory([]);
+      setNegativeHistoryAnswers({});
       setSelectedInvestigations([]);
       setExamValues({});
       setAiResult(null);
@@ -835,6 +1080,13 @@ You MUST return your response as a valid JSON object matching exactly this schem
     setManualHistory('');
     setExamSuggestions(null);
     setAiExamLoading(false);
+    setManualDiagnosis('');
+    setFollowUpAdvice('');
+    setAiRouteOfCare(null);
+    setRouteOverride(null);
+    setManualAdviceInput('');
+    setManualProcedureInput('');
+    setPlanSubTab('rx');
   }, [selectedPatientId]);
 
 // Make sure we have a selected patient if navigating to doctor tab
@@ -846,6 +1098,7 @@ You MUST return your response as a valid JSON object matching exactly this schem
   }, [activeTab, patients, selectedPatientId]);
 
   // --- Reception Actions ---
+
   const searchFollowUpPatient = (query) => {
     if (!query.trim()) {
       setNewPatientName('');
@@ -853,6 +1106,8 @@ You MUST return your response as a valid JSON object matching exactly this schem
       setNewPatientGender('male');
       setNewPatientAddress('');
       setNewPatientOccupation('');
+      setNewPatientInsuranceId('');
+      setNewPatientContact('');
       return;
     }
     const q = query.trim().toLowerCase();
@@ -865,13 +1120,18 @@ You MUST return your response as a valid JSON object matching exactly this schem
       setNewPatientGender(found.gender);
       setNewPatientAddress(found.address || '');
       setNewPatientOccupation(found.occupation || '');
+      setNewPatientInsuranceId(found.insuranceId || '');
+      setNewPatientContact(found.contact || '');
     } else {
       setNewPatientName('');
       setNewPatientAge('');
       setNewPatientAddress('');
       setNewPatientOccupation('');
+      setNewPatientInsuranceId('');
+      setNewPatientContact('');
     }
   };
+
   const generateNextUhid = async () => {
     const year = new Date().getFullYear();
     const prefix = `CHCD/${year}/`;
@@ -917,6 +1177,8 @@ You MUST return your response as a valid JSON object matching exactly this schem
         setNewPatientAge('');
         setNewPatientOccupation('');
         setNewPatientAddress('');
+        setNewPatientInsuranceId('');
+        setNewPatientContact('');
         setShowAddPatientModal(false);
         return;
       } else {
@@ -936,14 +1198,24 @@ You MUST return your response as a valid JSON object matching exactly this schem
       name: newPatientName, age: `${newPatientAge}y`, gender: newPatientGender,
       uhid: newUhid,
       triage: newPatientTriage, status: 'Nursing',
-      occupation: newPatientOccupation || '', address: newPatientAddress || '', vitals: null,
+      occupation: newPatientOccupation || '', address: newPatientAddress || '',
+      insurance_id: newPatientInsuranceId || '', contact: newPatientContact || '',
+      vitals: null,
     }).select().single();
-    if (!error) setPatients([mapDbPatientToUi(inserted), ...patients]);
 
+    if (error) {
+      console.error('Patient registration failed:', error);
+      alert(`Could not register patient: ${error.message}`);
+      return; // stop here — keep the modal open and the form filled so nothing is lost
+    }
+
+    setPatients([mapDbPatientToUi(inserted), ...patients]);
     setNewPatientName('');
     setNewPatientAge('');
     setNewPatientOccupation('');
     setNewPatientAddress('');
+    setNewPatientInsuranceId('');
+    setNewPatientContact('');
     setShowAddPatientModal(false);
   };
 
@@ -1008,9 +1280,12 @@ You MUST return your response as a valid JSON object matching exactly this schem
       const d = symptomDurations[s.id];
       return d && d.num ? `${s.name} (x ${d.num} ${d.unit})` : s.name;
     }).join(', ');
+
+    const hasImages = clinicalImages.length > 0;
+
     const promptText = `
-      You are an expert Consultant Physician AI referencing standard medical textbooks (e.g., Harrison's Principles of Internal Medicine, Bailey & Love's Short Practice of Surgery, Williams Obstetrics).
-      
+      You are a multi-disciplinary panel of senior consultants working as a single expert AI — spanning General Medicine (Harrison's Principles of Internal Medicine), General Surgery (Bailey & Love's Short Practice of Surgery), Obstetrics & Gynecology (Williams Obstetrics, Dutta's Textbook of Obstetrics, Shaw's Textbook of Gynecology), Pediatrics (Nelson Textbook of Pediatrics), Orthopedics (Apley's), ENT, Dermatology, Ophthalmology, and Psychiatry. Identify which specialty the presentation actually belongs to from the symptoms and profile below, and reason at that specialty's full depth — an OBG case must be worked up with obstetric/gynecological rigor (gravida/para, gestational age where relevant, obstetric red flags), not generic internal-medicine reasoning, and the same principle applies for surgical, pediatric, or psychiatric presentations.
+     
       Patient Profile: ${activePatient?.age}, ${activePatient?.gender}.
       Occupation: ${activePatient?.occupation}.
       Selected Clinical Findings & Symptoms: ${symNames}.
@@ -1043,6 +1318,17 @@ Based on the complete patient summary above (symptoms, manual history, negative 
 
     const grokApiUrl = "https://api.groq.com/openai/v1/chat/completions";
 
+    // Jo images hoy to vision model vapro, ane content ne text+image array banavo
+    const messageContent = hasImages
+        ? [
+          { type: "text", text: promptText + "\n\nAlso examine the attached clinical image(s) (rash, wound, swelling etc.) and factor visual findings into the differential diagnosis." },
+          ...clinicalImages.map(img => ({
+            type: "image_url",
+            image_url: { url: img.dataUrl }
+          }))
+        ]
+        : promptText;
+
     try {
       const response = await fetch(grokApiUrl, {
         method: 'POST',
@@ -1051,12 +1337,12 @@ Based on the complete patient summary above (symptoms, manual history, negative 
           'Authorization': 'Bearer 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'
         },
         body: JSON.stringify({
-          model: "llama-3.3-70b-versatile",
+          model: hasImages ? "llama-3.2-90b-vision-preview" : "llama-3.3-70b-versatile",
           response_format: {type: "json_object"},
           messages: [
             {
               role: "user",
-              content: promptText
+              content: messageContent
             }
           ]
         })
@@ -1153,21 +1439,30 @@ Based on the complete patient summary above (symptoms, manual history, negative 
   };
 
   const saveLabResults = (patientId, resultsText) => {
+    const images = radiologyImages[patientId] || [];
     setPatients(patients.map(p =>
         p.id === patientId
             ? {
               ...p,
               labResults: resultsText,
+              labImages: images,
               status: 'Doctor',
               labStatus: 'Completed' // આનાથી દર્દી લેબમાંથી ક્લિયર થઈ જશે
             }
             : p
     ));
+    setRadiologyImages(prev => {
+      const next = { ...prev };
+      delete next[patientId];
+      return next;
+    });
   };
 
   const acceptDiagnosis = () => {
-    if (selectedDdx.length === 0) return;
-    setAcceptedDiagnosis(selectedDdx);
+    const manual = manualDiagnosis.trim();
+    const finalDx = manual ? [...selectedDdx, manual] : selectedDdx;
+    if (finalDx.length === 0) return;
+    setAcceptedDiagnosis(finalDx);
     setNonPharmManagement([]);
     setConsultStep('plan');
   };
@@ -1179,27 +1474,36 @@ Based on the complete patient summary above (symptoms, manual history, negative 
 
       const diagnosisList = acceptedDiagnosis.join(', ');
       const promptText = `
-      You are an expert physician writing a complete, evidence-based treatment plan.
+      You are a multi-disciplinary panel of senior consultants writing a complete, evidence-based treatment plan as a single expert AI — spanning General Medicine (Harrison's Principles of Internal Medicine), General Surgery (Sabiston Textbook of Surgery), Obstetrics & Gynecology (Williams Obstetrics, Dutta's Textbook of Obstetrics, Shaw's Textbook of Gynecology, FOGSI guidelines), Pediatrics, Orthopedics, and Psychiatry. Match the treatment plan's specialty depth to the diagnosis given — an obstetric or gynecological diagnosis must get an OBG-specialist-grade plan (correct drug safety category for pregnancy/lactation where relevant, standard OBG monitoring and referral thresholds), not a generic internal-medicine plan.
+      
       Patient Profile: ${activePatient?.age}, ${activePatient?.gender}.
       Final Diagnosis: ${diagnosisList}.
-      
-      Generate a complete management plan for this diagnosis based on current clinical guidelines, including:
-      1. "medications" - standard pharmacological prescription with proper drug names, dosages, durations, and instructions.
+      Vitals: ${activePatient?.vitals ? JSON.stringify(activePatient.vitals) : 'Not recorded'}.
+      Triage: ${activePatient?.triage}.
+
+      IMPORTANT SAFETY INSTRUCTION: Do not default to oral medication out of caution. If the diagnosis, severity, vitals, or triage level (e.g., RED/unstable vitals, sepsis, severe dehydration, inability to tolerate oral intake, severe infection, obstetric emergency) clinically warrants IV/parenteral therapy or inpatient monitoring under standard guidelines, you MUST prescribe the appropriate IV medications/fluids and set "routeOfCare" to "IPD". Only use "OPD" when oral/outpatient management is genuinely sufficient per guidelines. Under-prescribing IV therapy when indicated is a critical error to avoid.
+
+      Generate a complete management plan for this diagnosis, including:
+      1. "medications" - standard pharmacological prescription with proper drug names, dosages, durations, and instructions. Prefix IV medications clearly, e.g. "Inj. Ceftriaxone 1g IV BD".
       2. "nonPharmacological" - non-drug management: lifestyle/diet advice, physiotherapy, wound care, monitoring instructions, referral advice, etc.
       3. "proceduralManagement" - any surgical or procedural interventions indicated for this diagnosis (e.g., incision & drainage, suturing, splinting, referral for surgery). If none are indicated, return an empty array.
-      
+      4. "routeOfCare" - "IPD" if inpatient admission and IV therapy/monitoring is clinically indicated, otherwise "OPD".
+      5. "routeReason" - one short sentence justifying the routeOfCare decision.
+
       You MUST return your response as a valid JSON object matching exactly this schema (no markdown formatting):
       {
         "medications": [
           {
-            "name": "Full drug name and strength (e.g., Tab. Paracetamol 500mg)",
+            "name": "Full drug name and strength (e.g., Tab. Paracetamol 500mg or Inj. Ceftriaxone 1g IV BD)",
             "dosage": "e.g., 1-0-1 or STAT",
             "duration": "e.g., 3 Days",
             "note": "e.g., After meals"
           }
         ],
         "nonPharmacological": ["Advice 1", "Advice 2"],
-        "proceduralManagement": ["Procedure 1", "Procedure 2"]
+        "proceduralManagement": ["Procedure 1", "Procedure 2"],
+        "routeOfCare": "OPD",
+        "routeReason": "..."
       }
     `;
 
@@ -1238,6 +1542,8 @@ Based on the complete patient summary above (symptoms, manual history, negative 
             ...(parsedResult.nonPharmacological || []).map(t => ({ type: 'Advice', text: t })),
             ...(parsedResult.proceduralManagement || []).map(t => ({ type: 'Procedure', text: t })),
           ]);
+          setAiRouteOfCare(parsedResult.routeOfCare === 'IPD' ? 'IPD' : 'OPD');
+          setRouteOverride(null);
         } else {
           setAiRxError("AI Engine returned an empty prescription.");
         }
@@ -1265,24 +1571,181 @@ Based on the complete patient summary above (symptoms, manual history, negative 
     const removeMedicine = (id) => {
       setPrescriptions(prescriptions.filter(m => m.id !== id));
     };
+  const addManualAdvice = () => {
+    const text = manualAdviceInput.trim();
+    if (!text) return;
+    setNonPharmManagement([...nonPharmManagement, { type: 'Advice', text }]);
+    setManualAdviceInput('');
+  };
+
+  const addManualProcedure = () => {
+    const text = manualProcedureInput.trim();
+    if (!text) return;
+    setNonPharmManagement([...nonPharmManagement, { type: 'Procedure', text }]);
+    setManualProcedureInput('');
+  };
+
+  const removeNonPharmItem = (index) => {
+    setNonPharmManagement(nonPharmManagement.filter((_, i) => i !== index));
+  };
+
+  const getActiveIpdDay = (patient) => {
+    const days = patient.dailyOrders || [];
+    const activeId = ipdActiveDayMap[patient.id];
+    return days.find(d => d.id === activeId) || days[days.length - 1] || null;
+  };
+
+  const saveIpdDailyOrders = (patient, updatedDays) => {
+    setPatients(patients.map(p => p.id === patient.id ? { ...p, dailyOrders: updatedDays } : p));
+    updatePatientInDb(patient.dbId, { daily_orders: updatedDays });
+  };
+
+  const addIpdDay = (patient) => {
+    const days = patient.dailyOrders || [];
+    const newDay = { id: `day-${Date.now()}`, label: `Day ${days.length + 1}`, meds: [], advice: [], procedures: [] };
+    const updatedDays = [...days, newDay];
+    saveIpdDailyOrders(patient, updatedDays);
+    setIpdActiveDayMap(prev => ({ ...prev, [patient.id]: newDay.id }));
+  };
+
+  const handleIpdMedInputChange = (patientId, field, value) => {
+    setIpdMedInputs(prev => ({
+      ...prev,
+      [patientId]: {
+        ...(prev[patientId] || { name: '', dosage: '1-0-1', duration: '1 Day' }),
+        [field]: value,
+      },
+    }));
+  };
+
+  const addIpdMedication = (patient) => {
+    const activeDay = getActiveIpdDay(patient);
+    if (!activeDay) return; // no day selected/created yet
+    const input = ipdMedInputs[patient.id];
+    if (!input || !input.name || !input.name.trim()) return;
+    const newMed = {
+      id: Date.now(),
+      name: input.name.trim(),
+      dosage: input.dosage || '1-0-1',
+      duration: input.duration || '1 Day',
+      note: '',
+    };
+    const updatedDays = (patient.dailyOrders || []).map(d =>
+        d.id === activeDay.id ? { ...d, meds: [...d.meds, newMed] } : d
+    );
+    saveIpdDailyOrders(patient, updatedDays);
+    setIpdMedInputs(prev => ({ ...prev, [patient.id]: { name: '', dosage: '1-0-1', duration: '1 Day' } }));
+  };
+
+  const removeIpdMedication = (patient, dayId, medId) => {
+    const updatedDays = (patient.dailyOrders || []).map(d =>
+        d.id === dayId ? { ...d, meds: d.meds.filter(m => m.id !== medId) } : d
+    );
+    saveIpdDailyOrders(patient, updatedDays);
+  };
+
+  const addIpdAdvice = (patient) => {
+    const activeDay = getActiveIpdDay(patient);
+    const text = (ipdAdviceInputs[patient.id] || '').trim();
+    if (!activeDay || !text) return;
+    const newAdvice = { id: Date.now(), text };
+    const updatedDays = (patient.dailyOrders || []).map(d =>
+        d.id === activeDay.id ? { ...d, advice: [...d.advice, newAdvice] } : d
+    );
+    saveIpdDailyOrders(patient, updatedDays);
+    setIpdAdviceInputs(prev => ({ ...prev, [patient.id]: '' }));
+  };
+
+  const removeIpdAdvice = (patient, dayId, adviceId) => {
+    const updatedDays = (patient.dailyOrders || []).map(d =>
+        d.id === dayId ? { ...d, advice: d.advice.filter(a => a.id !== adviceId) } : d
+    );
+    saveIpdDailyOrders(patient, updatedDays);
+  };
+
+  const addIpdProcedure = (patient) => {
+    const activeDay = getActiveIpdDay(patient);
+    const text = (ipdProcedureInputs[patient.id] || '').trim();
+    if (!activeDay || !text) return;
+    const newProcedure = { id: Date.now(), text };
+    const updatedDays = (patient.dailyOrders || []).map(d =>
+        d.id === activeDay.id ? { ...d, procedures: [...(d.procedures || []), newProcedure] } : d
+    );
+    saveIpdDailyOrders(patient, updatedDays);
+    setIpdProcedureInputs(prev => ({ ...prev, [patient.id]: '' }));
+  };
+
+  const removeIpdProcedure = (patient, dayId, procedureId) => {
+    const updatedDays = (patient.dailyOrders || []).map(d =>
+        d.id === dayId ? { ...d, procedures: (d.procedures || []).filter(pr => pr.id !== procedureId) } : d
+    );
+    saveIpdDailyOrders(patient, updatedDays);
+  };
+
 
   const finishConsultation = () => {
     if (!activePatient) return;
+    const ivIndicated = aiRouteOfCare === 'IPD' || requiresIVAdmission(prescriptions, nonPharmManagement.filter(i => i.type === 'Procedure'));
+    const finalRoute = routeOverride ? routeOverride : (ivIndicated ? 'IPD' : 'OPD');
+    const nextStatus = finalRoute === 'IPD' ? 'IPD' : 'Pharmacy';
+
+    // If going to IPD, seed Day 1 of dailyOrders with everything the doctor already entered
+    // (AI-suggested + manually added meds, non-pharm advice, and procedures), but only if
+    // this patient doesn't already have day-wise orders (avoid overwriting an existing IPD stay).
+    let dailyOrdersPatch = activePatient.dailyOrders || [];
+    if (nextStatus === 'IPD' && dailyOrdersPatch.length === 0 && (prescriptions.length > 0 || nonPharmManagement.length > 0 || followUpAdvice.trim())) {
+      const day1Meds = prescriptions.map(m => ({
+        id: m.id || Date.now() + Math.random(),
+        name: m.name,
+        dosage: m.dosage,
+        duration: m.duration,
+        note: m.note || '',
+      }));
+      const day1Advice = [
+        ...nonPharmManagement.filter(item => item.type === 'Advice').map(item => ({
+          id: Date.now() + Math.random(),
+          text: item.text,
+        })),
+        ...(followUpAdvice.trim() ? [{ id: Date.now() + Math.random(), text: followUpAdvice.trim() }] : []),
+      ];
+      const day1Procedures = nonPharmManagement.filter(item => item.type === 'Procedure').map(item => ({
+        id: Date.now() + Math.random(),
+        text: item.text,
+      }));
+      dailyOrdersPatch = [{ id: `day-${Date.now()}`, label: 'Day 1', meds: day1Meds, advice: day1Advice, procedures: day1Procedures }];
+    }
+
     setPatients(patients.map(p => {
       if (p.id === activePatient.id) {
         return {
           ...p,
-          status: 'Pharmacy',
+          status: nextStatus,
           diagnoses: acceptedDiagnosis,
           prescriptions: prescriptions,
-          nonPharmManagement: nonPharmManagement
+          nonPharmManagement: nonPharmManagement,
+          followUpAdvice: followUpAdvice,
+          dailyOrders: dailyOrdersPatch,
         };
       }
       return p;
     }));
+    updatePatientInDb(activePatient.dbId, {
+      status: nextStatus,
+      diagnoses: acceptedDiagnosis,
+      prescriptions: prescriptions,
+      daily_orders: dailyOrdersPatch,
+    });
     setSelectedPatientId(null);
-    setActiveTab('pharmacy');
+    setActiveTab(nextStatus === 'IPD' ? 'ipd' : 'pharmacy');
+
+    setPrescriptions([]);          // પ્રિસ્ક્રિપ્શન લિસ્ટ ખાલી કરો
+    setNonPharmManagement([]);     // નોન-ફાર્માકોલોજિકલ મેનેજમેન્ટ ખાલી કરો
+    setFollowUpAdvice("");         // ફોલો-અપ એડવાઈઝ ખાલી કરો
+    setAcceptedDiagnosis([]);      // જો ડાયગ્નોસિસ પણ ખાલી કરવું હોય તો
+    setRouteOverride(null);        // રૂટ ઓવરરાઈડ રીસેટ કરો
   };
+
+
     // --- Pharmacy Actions ---
     const dispenseMedication = (patientId) => {
       setPatients(patients.map(p => {
@@ -1315,11 +1778,18 @@ Based on the complete patient summary above (symptoms, manual history, negative 
     setNewMedStock("");
   };
 
+
     const printPrescription = (patient) => {
 
-      const nonPharmHtml = (patient.nonPharmManagement || []).map(item => `
-        <li style="margin-bottom:4px;"><b>[${item.type}]</b> ${item.text}</li>
-      `).join('');
+      const adviceHtml = (patient.nonPharmManagement || [])
+          .filter(item => item.type === 'Advice')
+          .map(item => `<li style="margin-bottom:4px;">${item.text}</li>`)
+          .join('');
+      const procedureHtml = (patient.nonPharmManagement || [])
+          .filter(item => item.type === 'Procedure')
+          .map(item => `<li style="margin-bottom:4px;">${item.text}</li>`)
+          .join('');
+
       const medsHtml = (patient.prescriptions || []).map(m => `
         <tr>
             <td style="padding:8px;border-bottom:1px solid #ddd;">${m.name}</td>
@@ -1358,8 +1828,8 @@ Based on the complete patient summary above (symptoms, manual history, negative 
                 <p style="margin:2px 0; font-size:13px;">${hospitalInfo.email}&nbsp;|&nbsp; Contact: ${hospitalInfo.contact}</p>
             </div>
             
-            <p style="text-align: left;"><b>Patient:</b> ${patient.name}&nbsp;&nbsp;|&nbsp;&nbsp;<b>Age/Sex:</b> ${patient.age} / ${patient.gender}</p>
-            <p style="margin:2px 0; font-size:13px;">${patient.address}</p>
+            <p style="text-align: left;"><b>Patient:</b> ${patient.name}&nbsp;&nbsp;|&nbsp;&nbsp;<b>UHID:</b> ${patient.uhid}&nbsp;&nbsp;|&nbsp;&nbsp;<b>Age/Sex:</b> ${patient.age} / ${patient.gender}</p>
+<p style="margin:2px 0; font-size:13px;">${patient.address || ''}${patient.contact ? ' &nbsp;|&nbsp; Contact: ' + patient.contact : ''}${patient.insuranceId ? ' &nbsp;|&nbsp; Insurance ID: ' + patient.insuranceId : ''}</p>
             <hr style="border: 0; border-top: 1px solid #eee; margin: 15px 0;">
             
             <div style="margin-bottom: 20px; text-align: left;">
@@ -1389,13 +1859,25 @@ Based on the complete patient summary above (symptoms, manual history, negative 
                 </thead>
                 <tbody>${medsHtml}</tbody>
             </table>
-            ${nonPharmHtml ? `
-            <div style="margin-top: 20px;">
-                <h4 style="margin:0 0 8px 0; color:#333;">NON-PHARMACOLOGICAL & PROCEDURAL MANAGEMENT</h4>
-                <ul style="padding-left: 18px; font-size: 13px;">${nonPharmHtml}</ul>
-            </div>` : ''}
-            <br/><br/>
-            <p style="text-align:right;">Doctor's Signature: ___________________</p>
+         ${adviceHtml ? `
+<div style="margin-top: 20px;">
+    <h4 style="margin:0 0 8px 0; color:#333;">NON-PHARMACOLOGICAL ADVICE</h4>
+    <ul style="padding-left: 18px; font-size: 13px;">${adviceHtml}</ul>
+</div>` : ''}
+${procedureHtml ? `
+<div style="margin-top: 15px;">
+    <h4 style="margin:0 0 8px 0; color:#333;">PROCEDURAL MANAGEMENT</h4>
+    <ul style="padding-left: 18px; font-size: 13px;">${procedureHtml}</ul>
+</div>` : ''}
+${patient.followUpAdvice ? `
+
+        
+<div style="margin-top: 15px;">
+    <h4 style="margin:0 0 8px 0; color:#333;">ADVICE & FOLLOW-UP</h4>
+    <p style="font-size:13px; margin:0;">${patient.followUpAdvice}</p>
+</div>` : ''}
+<br/><br/>
+<p style="text-align:right;">Doctor's Signature: ___________________</p>
             
         </body>
         </html>
@@ -1467,7 +1949,7 @@ Based on the complete patient summary above (symptoms, manual history, negative 
               Sign In
             </button>
             <p className="text-xs text-gray-400 text-center mt-2">
-              Demo: admin/admin123, reception/reception123, nurse/nurse123, doctor/doctor123, lab/lab123, pharmacy/pharmacy123
+              Demo: admin/admin123, reception/reception123, nurse/nurse123, doctor/doctor123, ipd/ipd123, lab/lab123, pharmacy/pharmacy123
             </p>
           </form>
         </div>
@@ -1493,6 +1975,9 @@ Based on the complete patient summary above (symptoms, manual history, negative 
               )}
               {currentRole?.tabs?.includes('doctor') && (
                   <SidebarItem step="3" icon={Stethoscope} label="MO Consultation" id="doctor" />
+              )}
+              {currentRole?.tabs?.includes('ipd') && (
+                  <SidebarItem step="3b" icon={BedDouble} label="IPD Ward" id="ipd" />
               )}
               {currentRole?.tabs?.includes('lab') && (
                   <SidebarItem step="4" icon={FlaskConical} label="Laboratory" id="lab" />
@@ -1525,6 +2010,7 @@ Based on the complete patient summary above (symptoms, manual history, negative 
                   {activeTab === 'reception' && "Reception - Patient Registration"}
                   {activeTab === 'nursing' && "Nursing Station - Vitals & Triage"}
                   {activeTab === 'doctor' && "MO Consultation (Doctor's Desk)"}
+                  {activeTab === 'ipd' && "IPD Ward — Admitted Patients"}
                   {activeTab === 'lab' && "Laboratory Section"}
                   {activeTab === 'review' && "Final Review Section"}
                   {activeTab === 'pharmacy' && "Pharmacy Dispensing"}
@@ -1553,7 +2039,18 @@ Based on the complete patient summary above (symptoms, manual history, negative 
                         <Plus size={16}/> Register New Patient
                       </button>
                     </div>
+                    <div className="bg-white p-3 rounded-xl border shadow-sm flex items-center gap-2">
+                      <Search size={16} className="text-gray-400 shrink-0"/>
+                      <input
+                          type="text"
+                          value={receptionSearch}
+                          onChange={(e) => setReceptionSearch(e.target.value)}
+                          placeholder="Search by UHID or patient name..."
+                          className="w-full outline-none text-sm"
+                      />
+                    </div>
                     <div className="bg-white rounded-xl border shadow-sm overflow-hidden overflow-x-auto">
+
                       <table className="w-full text-left border-collapse min-w-[700px]">
                         <thead>
                         <tr className="bg-gray-50 border-b text-xs font-bold text-gray-500 uppercase tracking-wider">
@@ -1567,7 +2064,7 @@ Based on the complete patient summary above (symptoms, manual history, negative 
                         </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100 text-sm text-gray-700">
-                        {patients.filter(p => p.status !== 'Discharged').map(p => (
+                        {patients.filter(p => p.status !== 'Discharged' && matchesSearch(p, receptionSearch)).map(p => (
                             <tr key={p.id} className="hover:bg-gray-50 transition-colors">
                               <td className="p-4 font-semibold text-blue-600 whitespace-nowrap">{p.uhid}</td>
                               <td className="p-4 font-medium text-gray-900">{p.name}</td>
@@ -1588,6 +2085,7 @@ Based on the complete patient summary above (symptoms, manual history, negative 
                           <span className={`px-2.5 py-1 rounded-full text-xs font-semibold whitespace-nowrap ${
                               p.status === 'Nursing' ? 'bg-orange-100 text-orange-700' :
                                   p.status === 'Doctor' ? 'bg-indigo-100 text-indigo-700' :
+                                      p.status === 'IPD' ? 'bg-red-100 text-red-700' :
                                       p.status === 'Pharmacy' ? 'bg-purple-100 text-purple-700' :
                                           'bg-slate-100 text-slate-800'
                           }`}>
@@ -1608,7 +2106,18 @@ Based on the complete patient summary above (symptoms, manual history, negative 
                               className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-5 animate-in fade-in zoom-in-95 duration-200">
                             <div className="flex items-center justify-between">
                               <h3 className="text-xl font-bold text-gray-900">New Registration</h3>
-                              <button onClick={() => setShowAddPatientModal(false)}
+
+                              <button onClick={() => {
+                                setShowAddPatientModal(false);
+                                setFollowUpUhid('');
+                                setNewPatientName('');
+                                setNewPatientAge('');
+                                setNewPatientGender('male');
+                                setNewPatientAddress('');
+                                setNewPatientOccupation('');
+                                setNewPatientInsuranceId('');
+                                setNewPatientContact('');
+                              }}
                                       className="text-gray-400 hover:text-gray-600">
                                 <Trash2 size={20} className="hidden"/>
                               </button>
@@ -1691,8 +2200,7 @@ Based on the complete patient summary above (symptoms, manual history, negative 
                               </div>
 
                               <div>
-                                <label
-                                    className="block text-xs font-semibold text-gray-700 mb-1.5 uppercase tracking-wide">Address</label>
+                                <label className="block text-xs font-semibold text-gray-700 mb-1.5 uppercase tracking-wide">Address</label>
                                 <input
                                     type="text"
                                     value={newPatientAddress}
@@ -1700,6 +2208,29 @@ Based on the complete patient summary above (symptoms, manual history, negative 
                                     placeholder="e.g., Village, Taluka, District"
                                     className="w-full border border-gray-300 rounded-lg px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
                                 />
+                              </div>
+
+                              <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                  <label className="block text-xs font-semibold text-gray-700 mb-1.5 uppercase tracking-wide">Contact Number</label>
+                                  <input
+                                      type="text"
+                                      value={newPatientContact}
+                                      onChange={e => setNewPatientContact(e.target.value)}
+                                      placeholder="10-digit mobile"
+                                      className="w-full border border-gray-300 rounded-lg px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-xs font-semibold text-gray-700 mb-1.5 uppercase tracking-wide">Insurance ID</label>
+                                  <input
+                                      type="text"
+                                      value={newPatientInsuranceId}
+                                      onChange={e => setNewPatientInsuranceId(e.target.value)}
+                                      placeholder="Policy / Insurance ID (optional)"
+                                      className="w-full border border-gray-300 rounded-lg px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
+                                  />
+                                </div>
                               </div>
 
                               <div>
@@ -1716,13 +2247,25 @@ Based on the complete patient summary above (symptoms, manual history, negative 
                               </div>
 
                               <div className="flex items-center gap-3 pt-2">
+
                                 <button
                                     type="button"
-                                    onClick={() => setShowAddPatientModal(false)}
+                                    onClick={() => {
+                                      setShowAddPatientModal(false);
+                                      setFollowUpUhid('');
+                                      setNewPatientName('');
+                                      setNewPatientAge('');
+                                      setNewPatientGender('male');ss
+                                      setNewPatientAddress('');
+                                      setNewPatientOccupation('');
+                                      setNewPatientInsuranceId('');
+                                      setNewPatientContact('');
+                                    }}
                                     className="flex-1 bg-white border border-gray-300 text-gray-700 px-4 py-2.5 rounded-lg text-sm font-semibold hover:bg-gray-50 transition-colors"
                                 >
                                   Cancel
                                 </button>
+
                                 <button
                                     type="submit"
                                     className="flex-1 bg-blue-600 text-white px-4 py-2.5 rounded-lg text-sm font-semibold hover:bg-blue-700 transition-colors shadow-sm"
@@ -1745,17 +2288,28 @@ Based on the complete patient summary above (symptoms, manual history, negative 
                       <p className="text-xs text-gray-500">Record vitals and assess patients before forwarding to the
                         Medical Officer.</p>
                     </div>
+                    <div className="bg-white p-3 rounded-xl border shadow-sm flex items-center gap-2">
+                      <Search size={16} className="text-gray-400 shrink-0"/>
+                      <input
+                          type="text"
+                          value={nursingSearch}
+                          onChange={(e) => setNursingSearch(e.target.value)}
+                          placeholder="Search by UHID or patient name..."
+                          className="w-full outline-none text-sm"
+                      />
+                    </div>
 
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                      {patients.filter(p => p.status === 'Nursing').length === 0 ? (
+                      {patients.filter(p => p.status === 'Nursing' && matchesSearch(p, nursingSearch)).length === 0 ? (
                           <div
+
                               className="col-span-full bg-white p-10 rounded-xl border border-dashed border-gray-300 text-center text-gray-500">
                             <ActivitySquare className="w-12 h-12 mx-auto text-gray-300 mb-3"/>
                             <p className="font-medium">No patients currently at the Nursing Station.</p>
                             <p className="text-xs mt-1">Patients registered at Reception will appear here.</p>
                           </div>
                       ) : (
-                          patients.filter(p => p.status === 'Nursing').map(p => (
+                          patients.filter(p => p.status === 'Nursing' && matchesSearch(p, nursingSearch)).map(p => (
                               <div key={p.id}
                                    className="bg-white rounded-xl border shadow-sm overflow-hidden flex flex-col">
                                 <div
@@ -1847,13 +2401,24 @@ Based on the complete patient summary above (symptoms, manual history, negative 
               {activeTab === 'doctor' && (
                   <div className="flex flex-col h-full space-y-4">
                     {/* Doctor Header: Patient Selector */}
+                    <div className="bg-white rounded-xl border shadow-sm p-3 flex items-center gap-2">
+                      <Search size={16} className="text-gray-400 shrink-0"/>
+                      <input
+                          type="text"
+                          value={doctorQueueSearch}
+                          onChange={(e) => setDoctorQueueSearch(e.target.value)}
+                          placeholder="Search queue by UHID or patient name..."
+                          className="w-full outline-none text-sm"
+                      />
+                    </div>
                     <div
                         className="bg-white rounded-xl border shadow-sm p-3 flex flex-wrap gap-2 items-center overflow-x-auto">
                       <span className="text-xs font-semibold text-gray-500 uppercase px-2">Waiting:</span>
-                      {patients.filter(p => p.status === 'Doctor').length === 0 ? (
-                          <span className="text-sm text-gray-500 italic">No patients in queue</span>
+                      {patients.filter(p => p.status === 'Doctor' && matchesSearch(p, doctorQueueSearch)).length === 0 ? (
+                          <span className="text-sm text-gray-500 italic">No matching patients in queue</span>
                       ) : (
-                          patients.filter(p => p.status === 'Doctor').map(p => (
+                          patients.filter(p => p.status === 'Doctor' && matchesSearch(p, doctorQueueSearch)).map(p => (
+
                               <button
                                   key={p.id}
                                   onClick={() => setSelectedPatientId(p.id)}
@@ -1873,7 +2438,7 @@ Based on the complete patient summary above (symptoms, manual history, negative 
                     </div>
 
                     {activePatient ? (
-                        <div className="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-6 overflow-hidden min-h-0">
+                        <div className="flex-1 grid grid-cols-1 lg:grid-cols-4 gap-6 overflow-hidden min-h-0">
                           {/* Left Column: Patient Profile & Workflow Steps */}
                           <div className="lg:col-span-1 flex flex-col gap-4 overflow-y-auto pr-2 pb-10 lg:pb-0">
 
@@ -1892,10 +2457,30 @@ Based on the complete patient summary above (symptoms, manual history, negative 
                                 </div>
                               </div>
 
-                              <div className="p-4 bg-gray-20">
-                                <h4 className="text-xs font-semibold text-gray-500 uppercase mb-2">Occupation</h4>
-                                <p className="text-sm font-medium text-gray-800">{activePatient.occupation}</p>
+                              <div className="p-4 bg-gray-20 space-y-2">
+                                <div>
+                                  <h4 className="text-xs font-semibold text-gray-500 uppercase mb-1">Occupation</h4>
+                                  <p className="text-sm font-medium text-gray-800">{activePatient.occupation}</p>
+                                </div>
+                                {(activePatient.contact || activePatient.insuranceId) && (
+                                    <div className="flex gap-6">
+                                      {activePatient.contact && (
+                                          <div>
+                                            <h4 className="text-xs font-semibold text-gray-500 uppercase mb-1">Contact</h4>
+                                            <p className="text-sm font-medium text-gray-800">{activePatient.contact}</p>
+                                          </div>
+                                      )}
+                                      {activePatient.insuranceId && (
+                                          <div>
+                                            <h4 className="text-xs font-semibold text-gray-500 uppercase mb-1">Insurance ID</h4>
+                                            <p className="text-sm font-medium text-gray-800">{activePatient.insuranceId}</p>
+                                          </div>
+                                      )}
+                                    </div>
+                                )}
                               </div>
+
+
 
                               {activePatient.vitals && (
                                   <div className="p-4 border-t grid grid-cols-2 gap-y-3 gap-x-2">
@@ -1963,12 +2548,11 @@ Based on the complete patient summary above (symptoms, manual history, negative 
 
                           {/* Right Column: Dynamic Content Area */}
                           <div
-                              className="lg:col-span-2 bg-white rounded-xl border shadow-sm flex flex-col overflow-hidden h-[600px] lg:h-auto">
+                              className="lg:col-span-3 bg-white rounded-xl border shadow-sm flex flex-col overflow-hidden h-[600px] lg:h-auto">
 
                             {/* --- STEP 1: History & Symptoms --- */}
                             {consultStep === 'history' && (
                                 <>
-
                                   <div className="flex border-b overflow-x-auto p-2 bg-gray-50 gap-2 hide-scrollbar">
                                     {CATEGORIES.map(cat => (
                                         <button
@@ -1986,6 +2570,27 @@ Based on the complete patient summary above (symptoms, manual history, negative 
                                   </div>
 
                                   <div className="flex-1 overflow-y-auto p-5">
+
+                                    <div className="mb-6">
+                                      <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">
+                                        Clinical Images (for AI reference)
+                                      </h4>
+                                      <div className="flex flex-wrap gap-3">
+                                        {clinicalImages.map(img => (
+                                            <div key={img.id} className="relative w-20 h-20 rounded-lg overflow-hidden border">
+                                              <img src={img.dataUrl} alt={img.name} className="w-full h-full object-cover" />
+                                              <button onClick={() => removeClinicalImage(img.id)}
+                                                      className="absolute top-0.5 right-0.5 bg-black/60 text-white rounded-full w-5 h-5 text-xs flex items-center justify-center">×</button>
+                                            </div>
+                                        ))}
+                                        <label className="w-20 h-20 rounded-lg border-2 border-dashed border-gray-300 flex flex-col items-center justify-center text-gray-400 cursor-pointer hover:border-indigo-400 hover:text-indigo-500">
+                                          <Plus size={18}/>
+                                          <span className="text-[10px] mt-1">Add</span>
+                                          <input type="file" accept="image/*" multiple onChange={handleImageUpload} className="hidden" />
+                                        </label>
+                                      </div>
+                                    </div>
+
                                     {selectedSymptoms.length > 0 && (
                                         <div className="mb-6">
                                           <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Selected Symptoms</h4>
@@ -2038,9 +2643,19 @@ Based on the complete patient summary above (symptoms, manual history, negative 
                                     )}
 
                                     <div className="p-4 border-b bg-gray-50">
-                                      <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">
-                                        Manual History & Symptoms/Complaint
-                                      </label>
+                                      <div className="flex items-center justify-between mb-2">
+                                        <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider">
+                                          Manual History & Symptoms/Complaint
+                                        </label>
+                                        <button
+                                            type="button"
+                                            onClick={startVoiceInput}
+                                            className={`flex items-center gap-1 text-xs px-2.5 py-1 rounded-full border ${isListening ? 'bg-red-100 text-red-700 border-red-300 animate-pulse' : 'bg-white text-gray-600 border-gray-300 hover:border-indigo-300'}`}
+                                        >
+                                          <Mic size={12}/> {isListening ? 'Listening...' : 'Voice Input'}
+                                        </button>
+                                      </div>
+
                                       <textarea
                                           value={manualHistory}
                                           onChange={(e) => setManualHistory(e.target.value)}
@@ -2128,23 +2743,27 @@ Based on the complete patient summary above (symptoms, manual history, negative 
                                     {examSuggestions?.negativeHistory?.length > 0 && (
                                         <div>
                                           <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">
-                                            Negative History (tap to confirm)
+                                            Negative History — tap "Present" if symptom exists, "Ruled Out" if patient denies it
                                           </h4>
                                           <div className="flex flex-wrap gap-2">
                                             {examSuggestions.negativeHistory.map((item, i) => {
-                                              const isChecked = selectedNegativeHistory.includes(item);
+                                              const answer = negativeHistoryAnswers[item];
                                               return (
-                                                  <button
-                                                      key={i}
-                                                      onClick={() => toggleNegativeHistory(item)}
-                                                      className={`px-3 py-1.5 rounded-full text-sm border ${
-                                                          isChecked
-                                                              ? 'bg-green-100 text-green-800 border-green-300'
-                                                              : 'bg-white text-gray-600 border-gray-300 hover:border-green-300'
-                                                      }`}
-                                                  >
-                                                    {isChecked ? '✓ ' : ''}{item}
-                                                  </button>
+                                                  <div key={i} className="flex items-center gap-1 bg-white border border-gray-200 rounded-full pl-3 pr-1 py-1">
+                                                    <span className="text-sm text-gray-700 mr-1">{item}</span>
+
+                                                    <button
+                                                        onClick={() => setNegativeHistoryAnswer(item, 'yes')}
+                                                        title="Symptom is present in this patient"
+                                                        className={`text-xs px-2 py-1 rounded-full font-semibold ${answer === 'yes' ? 'bg-red-500 text-white' : 'bg-gray-100 text-gray-500 hover:bg-red-50'}`}
+                                                    >Present</button>
+                                                    <button
+                                                        onClick={() => setNegativeHistoryAnswer(item, 'no')}
+                                                        title="Patient denies / ruled out"
+                                                        className={`text-xs px-2 py-1 rounded-full font-semibold ${answer === 'no' ? 'bg-green-600 text-white' : 'bg-gray-100 text-gray-500 hover:bg-green-50'}`}
+                                                    >Ruled Out</button>
+
+                                                  </div>
                                               );
                                             })}
                                           </div>
@@ -2206,6 +2825,7 @@ Based on the complete patient summary above (symptoms, manual history, negative 
                                               {selectedInvestigations.map((item, i) => (
                                                   <span key={i} className="inline-flex items-center gap-1 bg-indigo-100 text-indigo-800 border border-indigo-300 px-3 py-1.5 rounded-full text-sm">
                                                     {item}
+                                                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-white/70">{getTestCategory(item)}</span>
                                                     <button onClick={() => removeInvestigation(item)} className="text-indigo-500 hover:text-indigo-800 ml-1">
                                                       &times;
                                                     </button>
@@ -2342,10 +2962,23 @@ Based on the complete patient summary above (symptoms, manual history, negative 
                                           <p className="text-sm text-gray-800">{selectedInvestigations.join(', ')}</p>
                                       ) : <p className="text-sm text-gray-400 italic">None selected</p>}
                                     </div>
+
                                     {activePatient?.labResults && (
                                         <div className="bg-yellow-50 rounded-lg p-4 border border-yellow-200">
                                           <h4 className="text-xs font-bold text-yellow-700 uppercase tracking-wider mb-1">Lab Results</h4>
                                           <p className="text-sm text-gray-800 whitespace-pre-wrap">{activePatient.labResults}</p>
+                                          {activePatient.labImages && activePatient.labImages.length > 0 && (
+                                              <div className="mt-3">
+                                                <h5 className="text-xs font-bold text-yellow-700 uppercase mb-2">Radiology Images</h5>
+                                                <div className="flex flex-wrap gap-2">
+                                                  {activePatient.labImages.map(img => (
+                                                      <a key={img.id} href={img.dataUrl} target="_blank" rel="noreferrer">
+                                                        <img src={img.dataUrl} alt={img.name} className="w-24 h-24 rounded-lg object-cover border hover:opacity-80 transition-opacity" />
+                                                      </a>
+                                                  ))}
+                                                </div>
+                                              </div>
+                                          )}
                                         </div>
                                     )}
 
@@ -2403,6 +3036,7 @@ Based on the complete patient summary above (symptoms, manual history, negative 
                             )}
 
                             {/* --- STEP 4: Provisional Diagnosis --- */}
+
                             {consultStep === 'diagnosis' && (
                                 <div className="flex-1 flex flex-col p-6 overflow-y-auto bg-slate-50">
                                   <div className="mb-6 flex justify-between items-start">
@@ -2412,6 +3046,7 @@ Based on the complete patient summary above (symptoms, manual history, negative 
                                       </h3>
                                       <p className="text-sm text-gray-600 mt-1">Review AI suggestions based on clinical findings.</p>
                                     </div>
+
                                     <button
                                         onClick={runAIEngine}
                                         disabled={aiLoading}
@@ -2421,7 +3056,27 @@ Based on the complete patient summary above (symptoms, manual history, negative 
                                     </button>
                                   </div>
 
+                                  {activePatient?.labResults && (
+                                      <div className="bg-yellow-50 rounded-lg p-4 border border-yellow-200 mb-6">
+                                        <h4 className="text-xs font-bold text-yellow-700 uppercase tracking-wider mb-1">Lab Results</h4>
+                                        <p className="text-sm text-gray-800 whitespace-pre-wrap">{activePatient.labResults}</p>
+                                        {activePatient.labImages && activePatient.labImages.length > 0 && (
+                                            <div className="mt-3">
+                                              <h5 className="text-xs font-bold text-yellow-700 uppercase mb-2">Radiology Images</h5>
+                                              <div className="flex flex-wrap gap-2">
+                                                {activePatient.labImages.map(img => (
+                                                    <a key={img.id} href={img.dataUrl} target="_blank" rel="noreferrer">
+                                                      <img src={img.dataUrl} alt={img.name} className="w-24 h-24 rounded-lg object-cover border hover:opacity-80 transition-opacity" />
+                                                    </a>
+                                                ))}
+                                              </div>
+                                            </div>
+                                        )}
+                                      </div>
+                                  )}
+
                                   {aiLoading ? (
+
                                       <div className="flex-1 flex flex-col items-center justify-center text-indigo-600 space-y-4">
                                         <Activity size={40} className="animate-spin"/>
                                         <p className="font-medium animate-pulse">Consulting medical literature & analyzing...</p>
@@ -2433,6 +3088,19 @@ Based on the complete patient summary above (symptoms, manual history, negative 
                                       </div>
                                   ) : aiResult ? (
                                       <div className="space-y-6">
+
+                                        <div className="bg-white p-4 rounded-xl border shadow-sm">
+                                          <label className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2 block">
+                                            Add / Type Diagnosis Manually
+                                          </label>
+                                          <input
+                                              type="text"
+                                              value={manualDiagnosis}
+                                              onChange={(e) => setManualDiagnosis(e.target.value)}
+                                              placeholder="Type a custom diagnosis not in the AI list..."
+                                              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                                          />
+                                        </div>
                                         <div className="bg-white p-5 rounded-xl border border-indigo-100 shadow-sm">
                                           <h4 className="text-sm font-bold text-indigo-900 uppercase tracking-wider mb-4 border-b border-indigo-50 pb-2">Possible Conditions (Select to accept)</h4>
                                           <div className="space-y-2">
@@ -2500,6 +3168,7 @@ Based on the complete patient summary above (symptoms, manual history, negative 
                             )}
 
                             {/* --- STEP 5: Treatment Plan & Rx --- */}
+
                             {consultStep === 'plan' && (
                                 <div className="flex-1 flex flex-col overflow-hidden bg-slate-50">
                                   <div className="p-4 border-b bg-white flex justify-between items-center shadow-sm z-10">
@@ -2518,6 +3187,37 @@ Based on the complete patient summary above (symptoms, manual history, negative 
                                     </button>
                                   </div>
 
+
+
+                                  {/* Sub-tabs for Rx / Procedures / Non-Pharma / Follow-up */}
+                                  <div className="flex border-b bg-gray-50 px-4 gap-1 overflow-x-auto">
+                                    {[
+                                      { id: 'rx', label: 'Prescription (Rx)', count: prescriptions.length },
+                                      { id: 'procedures', label: 'Procedures', count: nonPharmManagement.filter(i => i.type === 'Procedure').length },
+                                      { id: 'nonpharm', label: 'Non-Pharma Advice', count: nonPharmManagement.filter(i => i.type === 'Advice').length },
+                                      { id: 'followup', label: 'Follow-up', count: followUpAdvice.trim() ? 1 : 0 },
+                                    ].map(tab => (
+                                        <button
+                                            key={tab.id}
+                                            onClick={() => setPlanSubTab(tab.id)}
+                                            className={`px-4 py-2.5 text-sm font-medium border-b-2 whitespace-nowrap flex items-center gap-1.5 ${
+                                                planSubTab === tab.id
+                                                    ? 'border-indigo-600 text-indigo-700'
+                                                    : 'border-transparent text-gray-500 hover:text-gray-700'
+                                            }`}
+                                        >
+                                          {tab.label}
+                                          {tab.count > 0 && (
+                                              <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
+                                                  planSubTab === tab.id ? 'bg-indigo-100 text-indigo-700' : 'bg-gray-200 text-gray-600'
+                                              }`}>
+                                                {tab.count}
+                                              </span>
+                                          )}
+                                        </button>
+                                    ))}
+                                  </div>
+
                                   <div className="flex-1 overflow-y-auto p-4 space-y-6">
                                     {aiRxError && (
                                         <div className="bg-red-50 text-red-600 p-3 rounded-lg text-sm flex gap-2 items-center">
@@ -2525,75 +3225,169 @@ Based on the complete patient summary above (symptoms, manual history, negative 
                                         </div>
                                     )}
 
-                                    <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
-                                      <div className="p-3 bg-gray-50 border-b flex justify-between items-center">
-                                        <h4 className="text-sm font-bold text-gray-700 uppercase">Prescription (<span className="text-xl font-serif text-gray-400 italic font-normal mr-1 pr-1 border-r">Rx</span>)</h4>
-                                      </div>
-                                      {prescriptions.length === 0 ? (
-                                          <div className="p-8 text-center text-gray-400 text-sm">
-                                            No medications added yet. <br/>Use AI generation or add manually below.
-                                          </div>
-                                      ) : (
-                                          <ul className="divide-y">
-                                            {prescriptions.map((med, idx) => (
-                                                <li key={med.id} className="p-4 flex justify-between items-start hover:bg-gray-50">
-                                                  <div className="flex items-start gap-3">
-                                                    <div className="mt-1 bg-blue-100 text-blue-700 w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold">{idx + 1}</div>
-                                                    <div>
-                                                      <h5 className="font-bold text-gray-900">{med.name}</h5>
-                                                      <div className="flex gap-4 mt-1 text-sm text-gray-600">
-                                                        <span className="font-medium bg-gray-100 px-2 rounded">{med.dosage}</span>
-                                                        <span>for <span className="font-medium text-gray-800">{med.duration}</span></span>
-                                                      </div>
-                                                      {med.note && <p className="text-xs text-gray-500 mt-1.5 italic">{med.note}</p>}
-                                                    </div>
-                                                  </div>
-                                                  <button onClick={() => removeMedicine(med.id)} className="text-red-400 hover:text-red-600 p-1">
-                                                    <Trash2 size={16}/>
-                                                  </button>
-                                                </li>
-                                            ))}
-                                          </ul>
-                                      )}
-                                    </div>
-
-                                    <div className="bg-white rounded-xl border border-dashed border-gray-300 p-4 shadow-sm">
-                                      <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Add Medication Manually</h4>
-                                      {nonPharmManagement.length > 0 && (
+                                    {planSubTab === 'rx' && (
+                                        <>
                                           <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
-                                            <div className="p-3 bg-amber-50 border-b">
-                                              <h4 className="text-sm font-bold text-gray-700 uppercase">Non-Pharmacological & Procedural Management</h4>
-                                            </div>
-                                            <ul className="divide-y">
-                                              {nonPharmManagement.map((item, idx) => (
-                                                  <li key={idx} className="p-3 flex items-start gap-2">
-                                                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full flex-shrink-0 mt-0.5 ${
-                                                      item.type === 'Procedure' ? 'bg-purple-100 text-purple-700' : 'bg-amber-100 text-amber-700'
-                                                  }`}>{item.type}</span>
-                                                    <span className="text-sm text-gray-800">{item.text}</span>
-                                                  </li>
-                                              ))}
-                                            </ul>
+                                            {prescriptions.length === 0 ? (
+                                                <div className="p-8 text-center text-gray-400 text-sm">
+                                                  No medications added yet. <br/>Use AI generation or add manually below.
+                                                </div>
+                                            ) : (
+                                                <ul className="divide-y">
+                                                  {prescriptions.map((med, idx) => (
+                                                      <li key={med.id} className="p-4 flex justify-between items-start hover:bg-gray-50">
+                                                        <div className="flex items-start gap-3">
+                                                          <div className="mt-1 bg-blue-100 text-blue-700 w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold">{idx + 1}</div>
+                                                          <div>
+                                                            <h5 className="font-bold text-gray-900">{med.name}</h5>
+                                                            <div className="flex gap-4 mt-1 text-sm text-gray-600">
+                                                              <span className="font-medium bg-gray-100 px-2 rounded">{med.dosage}</span>
+                                                              <span>for <span className="font-medium text-gray-800">{med.duration}</span></span>
+                                                            </div>
+                                                            {med.note && <p className="text-xs text-gray-500 mt-1.5 italic">{med.note}</p>}
+                                                          </div>
+                                                        </div>
+                                                        <button onClick={() => removeMedicine(med.id)} className="text-red-400 hover:text-red-600 p-1">
+                                                          <Trash2 size={16}/>
+                                                        </button>
+                                                      </li>
+                                                  ))}
+                                                </ul>
+                                            )}
                                           </div>
-                                      )}
-                                      <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
-                                        <div className="sm:col-span-5">
-                                          <input type="text" placeholder="Medicine Name (e.g., Tab. Azithromycin 500mg)" value={medName} onChange={e => setMedName(e.target.value)} className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none"/>
+
+                                          <div className="bg-white rounded-xl border border-dashed border-gray-300 p-4 shadow-sm">
+                                            <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Add Medication Manually</h4>
+                                            <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
+                                              <div className="sm:col-span-5">
+                                                <input type="text" placeholder="Medicine Name (e.g., Tab. Azithromycin 500mg)" value={medName} onChange={e => setMedName(e.target.value)} className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none"/>
+                                              </div>
+                                              <div className="sm:col-span-3">
+                                                <input type="text" placeholder="Dosage (e.g., 1-0-1)" value={medDosage} onChange={e => setMedDosage(e.target.value)} className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none"/>
+                                              </div>
+                                              <div className="sm:col-span-2">
+                                                <input type="text" placeholder="Days" value={medDuration} onChange={e => setMedDuration(e.target.value)} className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none"/>
+                                              </div>
+                                              <div className="sm:col-span-2">
+                                                <button onClick={addManualMedicine} className="w-full bg-gray-800 text-white px-3 py-2 rounded-lg text-sm font-medium hover:bg-gray-900 transition-colors h-full flex justify-center items-center">
+                                                  <Plus size={16}/> Add
+                                                </button>
+                                              </div>
+                                            </div>
+                                          </div>
+                                        </>
+                                    )}
+
+                                    {planSubTab === 'procedures' && (
+                                        <div className="bg-white rounded-xl border shadow-sm p-4">
+                                          <h4 className="text-xs font-bold text-purple-700 uppercase tracking-wider mb-2">Procedural Management</h4>
+                                          {nonPharmManagement.filter(item => item.type === 'Procedure').length === 0 ? (
+                                              <p className="text-sm text-gray-400 italic mb-2">None added.</p>
+                                          ) : (
+                                              <ul className="divide-y border rounded-lg mb-2">
+                                                {nonPharmManagement.map((item, idx) => item.type === 'Procedure' && (
+                                                    <li key={idx} className="p-3 flex items-start justify-between gap-2">
+                                                      <span className="text-sm text-gray-800">{item.text}</span>
+                                                      <button onClick={() => removeNonPharmItem(idx)} className="text-red-400 hover:text-red-600 p-1 shrink-0">
+                                                        <Trash2 size={14}/>
+                                                      </button>
+                                                    </li>
+                                                ))}
+                                              </ul>
+                                          )}
+                                          <div className="flex gap-2">
+                                            <input
+                                                type="text"
+                                                placeholder="e.g., Incision & drainage, suturing, splinting, referral"
+                                                value={manualProcedureInput}
+                                                onChange={(e) => setManualProcedureInput(e.target.value)}
+                                                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addManualProcedure(); } }}
+                                                className="flex-1 border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-purple-400 outline-none"
+                                            />
+                                            <button onClick={addManualProcedure} className="bg-purple-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-purple-700 flex items-center gap-1">
+                                              <Plus size={16}/> Add
+                                            </button>
+                                          </div>
                                         </div>
-                                        <div className="sm:col-span-3">
-                                          <input type="text" placeholder="Dosage (e.g., 1-0-1)" value={medDosage} onChange={e => setMedDosage(e.target.value)} className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none"/>
+                                    )}
+
+                                    {planSubTab === 'nonpharm' && (
+                                        <div className="bg-white rounded-xl border shadow-sm p-4">
+                                          <h4 className="text-xs font-bold text-amber-700 uppercase tracking-wider mb-2">Non-Pharmacological Advice</h4>
+                                          {nonPharmManagement.filter(item => item.type === 'Advice').length === 0 ? (
+                                              <p className="text-sm text-gray-400 italic mb-2">None added.</p>
+                                          ) : (
+                                              <ul className="divide-y border rounded-lg mb-2">
+                                                {nonPharmManagement.map((item, idx) => item.type === 'Advice' && (
+                                                    <li key={idx} className="p-3 flex items-start justify-between gap-2">
+                                                      <span className="text-sm text-gray-800">{item.text}</span>
+                                                      <button onClick={() => removeNonPharmItem(idx)} className="text-red-400 hover:text-red-600 p-1 shrink-0">
+                                                        <Trash2 size={14}/>
+                                                      </button>
+                                                    </li>
+                                                ))}
+                                              </ul>
+                                          )}
+                                          <div className="flex gap-2">
+                                            <input
+                                                type="text"
+                                                placeholder="e.g., Diet advice, rest, plenty of fluids, wound care"
+                                                value={manualAdviceInput}
+                                                onChange={(e) => setManualAdviceInput(e.target.value)}
+                                                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addManualAdvice(); } }}
+                                                className="flex-1 border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-amber-400 outline-none"
+                                            />
+                                            <button onClick={addManualAdvice} className="bg-amber-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-amber-700 flex items-center gap-1">
+                                              <Plus size={16}/> Add
+                                            </button>
+                                          </div>
                                         </div>
-                                        <div className="sm:col-span-2">
-                                          <input type="text" placeholder="Days" value={medDuration} onChange={e => setMedDuration(e.target.value)} className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none"/>
+                                    )}
+
+                                    {planSubTab === 'followup' && (
+                                        <div className="bg-white rounded-xl border shadow-sm p-4">
+                                          <label className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2 block">
+                                            Advice & Follow-up Instructions
+                                          </label>
+                                          <textarea
+                                              value={followUpAdvice}
+                                              onChange={(e) => setFollowUpAdvice(e.target.value)}
+                                              rows={4}
+                                              placeholder="e.g., Review after 5 days, drink plenty of fluids, return if fever persists >3 days"
+                                              className="w-full border border-gray-300 rounded-lg p-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                                          />
                                         </div>
-                                        <div className="sm:col-span-2">
-                                          <button onClick={addManualMedicine} className="w-full bg-gray-800 text-white px-3 py-2 rounded-lg text-sm font-medium hover:bg-gray-900 transition-colors h-full flex justify-center items-center">
-                                            <Plus size={16}/> Add
-                                          </button>
+                                    )}
+                                  </div>
+
+
+                                  {(aiRouteOfCare === 'IPD' || requiresIVAdmission(prescriptions, nonPharmManagement.filter(i => i.type === 'Procedure')) ) && (
+                                      <div className="mx-4 mt-3 bg-red-50 border border-red-200 rounded-lg p-1 flex items-start gap-3">
+                                        <AlertTriangle className="text-red-500 shrink-0 mt-0.5" size={18}/>
+                                        <div className="flex-1">
+                                          <p className="text-sm font-semibold text-red-800">IV therapy / inpatient care recommended</p>
+                                          <p className="text-xs text-red-600 mt-0.5">
+                                            {aiRouteOfCare === 'IPD' ? 'AI assessment suggests IPD admission. ' : 'IV medication detected in the prescription. '}
+                                            This patient will be routed to IPD instead of Pharmacy unless overridden below.
+                                          </p>
+                                          <div className="flex gap-2 mt-2">
+                                            <button
+                                                onClick={() => setRouteOverride('IPD')}
+                                                className={`text-xs px-3 py-1 rounded-full border font-medium ${routeOverride !== 'OPD' ? 'bg-red-600 text-white border-red-600' : 'bg-white text-red-700 border-red-300'}`}
+                                            >
+                                              Keep as IPD
+                                            </button>
+                                            <button
+                                                onClick={() => setRouteOverride('OPD')}
+                                                className={`text-xs px-3 py-1 rounded-full border font-medium ${routeOverride === 'OPD' ? 'bg-gray-800 text-white border-gray-800' : 'bg-white text-gray-600 border-gray-300'}`}
+                                            >
+                                              Override → Send to Pharmacy (OPD)
+                                            </button>
+                                          </div>
                                         </div>
                                       </div>
-                                    </div>
-                                  </div>
+                                  )}
+
 
                                   <div className="p-4 bg-white border-t flex justify-between gap-3 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
                                     <button onClick={() => setConsultStep('diagnosis')} className="bg-white border text-gray-600 px-6 py-2.5 rounded-lg text-sm font-semibold hover:bg-gray-50">
@@ -2602,9 +3396,10 @@ Based on the complete patient summary above (symptoms, manual history, negative 
                                     <div className="flex items-center gap-4">
                                       <button onClick={() => printPrescription(activePatient)} className="bg-blue-600 text-white px-6 py-2.5 rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-blue-700 transition-colors shadow-sm">
                                         Print Case Paper
+
                                       </button>
                                       <button onClick={finishConsultation} className="bg-green-600 text-white px-8 py-2.5 rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-green-700 transition-colors shadow-sm">
-                                        <CheckCircle2 size={18}/> Send to Pharmacy
+                                        <CheckCircle2 size={18}/> Send to Pharmacy/IPD
                                       </button>
                                     </div>
                                   </div>
@@ -2627,64 +3422,384 @@ Based on the complete patient summary above (symptoms, manual history, negative 
                   </div>
               )}
 
+              {activeTab === 'ipd' && (
+                  <div className="max-w-4xl mx-auto space-y-4">
+                    <h2 className="text-xl font-bold text-gray-700">IPD Ward</h2>
+                    <div className="bg-white p-3 rounded-xl border shadow-sm flex items-center gap-2">
+                      <Search size={16} className="text-gray-400 shrink-0"/>
+                      <input
+                          type="text"
+                          value={ipdSearch}
+                          onChange={(e) => setIpdSearch(e.target.value)}
+                          placeholder="Search by UHID or patient name..."
+                          className="w-full outline-none text-sm"
+                      />
+                    </div>
+                    {patients.filter(p => p.status === 'IPD' && matchesSearch(p, ipdSearch)).length === 0 ? (
+                        <div className="bg-white p-8 rounded-xl border text-center text-gray-400">
+                          No matching admitted patients.
+                        </div>
+                    ) : (
+                        patients.filter(p => p.status === 'IPD' && matchesSearch(p, ipdSearch)).map(p => (
+
+
+                            <div key={p.id} className="bg-white p-4 rounded-xl border shadow-sm">
+                              <div className="flex justify-between items-start">
+                                <div>
+                                  <h3 className="font-bold">{p.name} <span className="text-sm text-gray-500">({p.age}, {p.gender})</span></h3>
+                                  <p className="text-xs text-gray-500">{p.uhid}</p>
+                                  <p className="text-sm text-indigo-700 font-medium mt-1">{(p.diagnoses || []).join(', ')}</p>
+                                </div>
+                                <span className="text-[10px] font-bold px-2 py-1 rounded-full bg-red-100 text-red-700 border border-red-200">ADMITTED</span>
+                              </div>
+
+                              <div className="mt-3">
+                                <h4 className="text-xs font-bold text-gray-400 uppercase mb-2">Day-wise Orders</h4>
+
+                                {/* Day tabs */}
+                                <div className="flex flex-wrap gap-2 mb-3">
+                                  {(p.dailyOrders || []).map(day => (
+                                      <button
+                                          key={day.id}
+                                          onClick={() => setIpdActiveDayMap(prev => ({ ...prev, [p.id]: day.id }))}
+                                          className={`px-3 py-1.5 rounded-full text-xs font-semibold border ${
+                                              (ipdActiveDayMap[p.id] || (p.dailyOrders || [])[(p.dailyOrders || []).length - 1]?.id) === day.id
+                                                  ? 'bg-red-600 text-white border-red-600'
+                                                  : 'bg-white text-gray-600 border-gray-300 hover:border-red-300'
+                                          }`}
+                                      >
+                                        {day.label}
+                                      </button>
+                                  ))}
+                                  <button
+                                      onClick={() => addIpdDay(p)}
+                                      className="px-3 py-1.5 rounded-full text-xs font-semibold border border-dashed border-gray-400 text-gray-600 hover:border-red-400 hover:text-red-600 flex items-center gap-1"
+                                  >
+                                    <Plus size={12}/> New Day
+                                  </button>
+                                </div>
+
+                                {(p.dailyOrders || []).length === 0 ? (
+                                    <p className="text-sm text-gray-400 italic mb-3">No days added yet — click "New Day" to start ordering.</p>
+                                ) : (() => {
+                                  const activeDay = getActiveIpdDay(p);
+                                  if (!activeDay) return null;
+                                  return (
+                                      <div className="border rounded-lg p-3 bg-gray-50 space-y-4">
+                                        {/* Medications for this day */}
+                                        <div>
+                                          <h5 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Medications — {activeDay.label}</h5>
+                                          {activeDay.meds.length === 0 ? (
+                                              <p className="text-sm text-gray-400 italic mb-2">None added for this day.</p>
+                                          ) : (
+                                              <ul className="divide-y border rounded-lg bg-white mb-2">
+                                                {activeDay.meds.map(m => (
+                                                    <li key={m.id} className="flex items-center justify-between px-3 py-2">
+                                                      <span className="text-sm text-gray-800">
+                                                        <span className="font-medium">{m.name}</span> — {m.dosage}, {m.duration}
+                                                      </span>
+                                                      <button
+                                                          onClick={() => removeIpdMedication(p, activeDay.id, m.id)}
+                                                          className="text-red-400 hover:text-red-600 p-1"
+                                                      >
+                                                        <Trash2 size={14}/>
+                                                      </button>
+                                                    </li>
+                                                ))}
+                                              </ul>
+                                          )}
+                                          <div className="grid grid-cols-1 sm:grid-cols-12 gap-2">
+                                            <div className="sm:col-span-5">
+                                              <input
+                                                  type="text"
+                                                  placeholder="e.g., Inj. Ceftriaxone 1g IV"
+                                                  value={ipdMedInputs[p.id]?.name || ''}
+                                                  onChange={(e) => handleIpdMedInputChange(p.id, 'name', e.target.value)}
+                                                  className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-red-400 outline-none"
+                                              />
+                                            </div>
+                                            <div className="sm:col-span-3">
+                                              <input
+                                                  type="text"
+                                                  placeholder="Dosage (e.g., BD)"
+                                                  value={ipdMedInputs[p.id]?.dosage ?? '1-0-1'}
+                                                  onChange={(e) => handleIpdMedInputChange(p.id, 'dosage', e.target.value)}
+                                                  className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-red-400 outline-none"
+                                              />
+                                            </div>
+                                            <div className="sm:col-span-2">
+                                              <input
+                                                  type="text"
+                                                  placeholder="Duration"
+                                                  value={ipdMedInputs[p.id]?.duration ?? '1 Day'}
+                                                  onChange={(e) => handleIpdMedInputChange(p.id, 'duration', e.target.value)}
+                                                  className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-red-400 outline-none"
+                                              />
+                                            </div>
+                                            <div className="sm:col-span-2">
+                                              <button
+                                                  onClick={() => addIpdMedication(p)}
+                                                  className="w-full bg-red-600 text-white px-3 py-2 rounded-lg text-sm font-medium hover:bg-red-700 transition-colors h-full flex justify-center items-center gap-1"
+                                              >
+                                                <Plus size={16}/> Add
+                                              </button>
+                                            </div>
+                                          </div>
+                                        </div>
+
+                                        {/* Advice for this day */}
+                                        <div>
+                                          <h5 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Advice / Nursing Instructions — {activeDay.label}</h5>
+                                          {activeDay.advice.length === 0 ? (
+                                              <p className="text-sm text-gray-400 italic mb-2">None added for this day.</p>
+                                          ) : (
+                                              <ul className="divide-y border rounded-lg bg-white mb-2">
+                                                {activeDay.advice.map(a => (
+                                                    <li key={a.id} className="flex items-center justify-between px-3 py-2">
+                                                      <span className="text-sm text-gray-800">{a.text}</span>
+                                                      <button
+                                                          onClick={() => removeIpdAdvice(p, activeDay.id, a.id)}
+                                                          className="text-red-400 hover:text-red-600 p-1"
+                                                      >
+                                                        <Trash2 size={14}/>
+                                                      </button>
+                                                    </li>
+                                                ))}
+                                              </ul>
+                                          )}
+                                          <div className="flex gap-2">
+                                            <input
+                                                type="text"
+                                                placeholder="e.g., Monitor vitals 4-hourly, NPO after midnight, elevate limb"
+                                                value={ipdAdviceInputs[p.id] || ''}
+                                                onChange={(e) => setIpdAdviceInputs(prev => ({ ...prev, [p.id]: e.target.value }))}
+                                                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addIpdAdvice(p); } }}
+                                                className="flex-1 border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-red-400 outline-none"
+                                            />
+                                            <button
+                                                onClick={() => addIpdAdvice(p)}
+                                                className="bg-gray-800 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-900 flex items-center gap-1"
+                                            >
+                                              <Plus size={16}/> Add
+                                            </button>
+                                          </div>
+                                        </div>
+
+                                        {/* Procedures for this day */}
+                                        <div>
+                                          <h5 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">
+                                            Procedures — {activeDay.label}
+                                            {(activeDay.procedures || []).length > 0 && (
+                                                <span className="ml-2 inline-flex items-center justify-center w-5 h-5 rounded-full bg-purple-100 text-purple-700 text-[10px] font-bold align-middle">
+                                                  {(activeDay.procedures || []).length}
+                                                </span>
+                                            )}
+                                          </h5>
+                                          {(activeDay.procedures || []).length === 0 ? (
+                                              <p className="text-sm text-gray-400 italic mb-2">None added for this day.</p>
+                                          ) : (
+                                              <ul className="divide-y border rounded-lg bg-white mb-2">
+                                                {activeDay.procedures.map(pr => (
+                                                    <li key={pr.id} className="flex items-center justify-between px-3 py-2">
+                                                      <span className="text-sm text-gray-800">
+                                                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 mr-2">Procedure</span>
+                                                        {pr.text}
+                                                      </span>
+                                                      <button
+                                                          onClick={() => removeIpdProcedure(p, activeDay.id, pr.id)}
+                                                          className="text-red-400 hover:text-red-600 p-1"
+                                                      >
+                                                        <Trash2 size={14}/>
+                                                      </button>
+                                                    </li>
+                                                ))}
+                                              </ul>
+                                          )}
+                                          <div className="flex gap-2">
+                                            <input
+                                                type="text"
+                                                placeholder="e.g., Incision & drainage, wound dressing, catheterization"
+                                                value={ipdProcedureInputs[p.id] || ''}
+                                                onChange={(e) => setIpdProcedureInputs(prev => ({ ...prev, [p.id]: e.target.value }))}
+                                                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addIpdProcedure(p); } }}
+                                                className="flex-1 border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-purple-400 outline-none"
+                                            />
+                                            <button
+                                                onClick={() => addIpdProcedure(p)}
+                                                className="bg-purple-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-purple-700 flex items-center gap-1"
+                                            >
+                                              <Plus size={16}/> Add
+                                            </button>
+                                          </div>
+                                        </div>
+                                      </div>
+                                  );
+                                })()}
+
+                              </div>
+
+                              <div className="mt-3 flex justify-end gap-2">
+                                <button
+                                    onClick={() => { printIpdCasePaper(p); setIpdPrinted(prev => ({ ...prev, [p.id]: true })); }}
+                                    className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-semibold"
+                                >
+                                  🖨️ Print Case Paper
+                                </button>
+                                <button
+                                    disabled={!ipdPrinted[p.id]}
+                                    onClick={() => {
+                                      setPatients(patients.map(pt => pt.id === p.id ? { ...pt, status: 'Pharmacy' } : pt));
+                                      updatePatientInDb(p.dbId, { status: 'Pharmacy' });
+                                    }}
+                                    className={`px-4 py-2 rounded-lg text-sm font-semibold text-white ${ipdPrinted[p.id] ? 'bg-purple-600 hover:bg-purple-700' : 'bg-gray-300 cursor-not-allowed'}`}
+                                >
+                                  Discharge → Send to Pharmacy
+                                </button>
+                              </div>
+                            </div>
+                        ))
+                    )}
+                  </div>
+              )}
+
               {/* --- LAB TAB (Real) --- */}
+
               {activeTab === 'lab' && (
                   <div className="max-w-3xl mx-auto space-y-4">
                     <h2 className="text-xl font-bold text-gray-700">Laboratory</h2>
-                    {patients.filter(p => p.labStatus === 'Pending').length === 0 ? (
+                    <div className="bg-white p-3 rounded-xl border shadow-sm flex items-center gap-2">
+                      <Search size={16} className="text-gray-400 shrink-0"/>
+                      <input
+                          type="text"
+                          value={labSearch}
+                          onChange={(e) => setLabSearch(e.target.value)}
+                          placeholder="Search by UHID or patient name..."
+                          className="w-full outline-none text-sm"
+                      />
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {['All', 'Radiology', 'Pathology', 'Microbiology', 'Biochemistry', 'Other'].map(cat => (
+                          <button
+                              key={cat}
+                              onClick={() => setLabCategoryFilter(cat)}
+                              className={`px-3 py-1.5 rounded-full text-xs font-semibold border ${
+                                  labCategoryFilter === cat
+                                      ? 'bg-gray-800 text-white border-gray-800'
+                                      : 'bg-white text-gray-600 border-gray-300 hover:border-gray-400'
+                              }`}
+                          >
+                            {cat}
+                          </button>
+                      ))}
+                    </div>
+                    {patients.filter(p => p.labStatus === 'Pending' && matchesSearch(p, labSearch) && (labCategoryFilter === 'All' || (p.investigationsOrdered || []).some(inv => getTestCategory(inv) === labCategoryFilter))).length === 0 ? (
                         <div className="bg-white p-8 rounded-xl border text-center text-gray-400">
-                          No patients waiting for lab results.
+                          No matching patients waiting for lab results.
                         </div>
                     ) : (
-                        patients.filter(p => p.labStatus === 'Pending').map(p => (
-                            <div key={p.id} className="bg-white p-4 rounded-xl border shadow-sm">
-                              <h3 className="font-bold">{p.name} <span className="text-sm text-gray-500">({p.age}y, {p.gender})</span></h3>
-                              <p className="text-sm text-gray-600 mb-2">Investigations ordered: {(p.investigationsOrdered || []).join(', ') || 'General'}</p>
-                              <div className="space-y-2 mb-3">
-                                {(p.investigationsOrdered && p.investigationsOrdered.length > 0 ? p.investigationsOrdered : ['General Test']).map((inv, idx) => (
-                                    <div key={idx} className="border rounded-lg p-3 bg-gray-50">
-                                      <h4 className="text-sm font-bold text-gray-700 mb-2">{inv}</h4>
-                                      {getTestParams(inv).map((param, pIdx) => (
-                                          <div key={pIdx} className="grid grid-cols-3 gap-2 items-center mb-2">
-                                            <span className="text-xs text-gray-600">{param.name}</span>
-                                            <input
-                                                type="text"
-                                                placeholder="Value"
-                                                className="border rounded p-2 text-sm"
-                                                id={`lab-val-${p.id}-${idx}-${pIdx}`}
-                                            />
-                                            <input
-                                                type="text"
-                                                defaultValue={param.ref}
-                                                className="border rounded p-2 text-sm text-gray-600"
-                                                id={`lab-ref-${p.id}-${idx}-${pIdx}`}
-                                            />
-                                          </div>
-                                      ))}
-                                    </div>
-                                ))}
-                              </div>
-                              <button
-                                  onClick={() => {
-                                    const invList = p.investigationsOrdered && p.investigationsOrdered.length > 0 ? p.investigationsOrdered : ['General Test'];
-                                    const combined = invList.map((inv, idx) => {
-                                      const params = getTestParams(inv);
-                                      const paramResults = params.map((param, pIdx) => {
-                                        const val = document.getElementById(`lab-val-${p.id}-${idx}-${pIdx}`).value;
-                                        const ref = document.getElementById(`lab-ref-${p.id}-${idx}-${pIdx}`).value;
-                                        return `${param.name}: ${val || 'N/A'} (Ref: ${ref || 'N/A'})`;
-                                      }).join(', ');
-                                      return `${inv} [${paramResults}]`;
-                                    }).join('; ');
-                                    saveLabResults(p.id, combined);
-                                  }}
-                                  className="mt-2 bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-semibold"
-                              >
-                                Save & Send Back to Doctor
-                              </button>
-                            </div>
-                        ))
+                        <div className="space-y-4">
+                          {patients.filter(p => p.labStatus === 'Pending' && matchesSearch(p, labSearch) && (labCategoryFilter === 'All' || (p.investigationsOrdered || []).some(inv => getTestCategory(inv) === labCategoryFilter))).map(p => (
+                              <div key={p.id} className="bg-white p-4 rounded-xl border shadow-sm">
+                                <h3 className="font-bold">{p.name} <span className="text-sm text-gray-500">({p.age}y, {p.gender})</span></h3>
 
+                                <p className="text-sm text-gray-600 mb-2">Investigations ordered: {(p.investigationsOrdered || []).join(', ') || 'General'}</p>
+                                {(() => {
+                                  const invList = p.investigationsOrdered && p.investigationsOrdered.length > 0 ? p.investigationsOrdered : ['General Test'];
+                                  const radiologyEntries = invList.map((inv, idx) => ({ inv, idx })).filter(({ inv }) => getTestCategory(inv) === 'Radiology');
+                                  const diagLabEntries = invList.map((inv, idx) => ({ inv, idx })).filter(({ inv }) => getTestCategory(inv) !== 'Radiology');
+
+                                  return (
+                                      <div className="space-y-5 mb-3">
+                                        {/* ===== RADIOLOGY SECTION ===== */}
+                                        {radiologyEntries.length > 0 && (
+                                            <div className="border-2 border-purple-200 rounded-lg p-3 bg-purple-50/40">
+                                              <h3 className="text-xs font-bold uppercase tracking-wider mb-2 px-2 py-1 rounded inline-block bg-purple-100 text-purple-700">
+                                                Radiology
+                                              </h3>
+                                              <div className="space-y-2">
+                                                {radiologyEntries.map(({ inv, idx }) => (
+                                                    <div key={idx} className="border rounded-lg p-3 bg-white">
+                                                      <h4 className="text-sm font-bold text-gray-700 mb-2">{inv}</h4>
+                                                      {getTestParams(inv).map((param, pIdx) => (
+                                                          <div key={pIdx} className="grid grid-cols-3 gap-2 items-center mb-2">
+                                                            <span className="text-xs text-gray-600">{param.name}</span>
+                                                            <input type="text" placeholder="Value" className="border rounded p-2 text-sm" id={`lab-val-${p.id}-${idx}-${pIdx}`} disabled={p.radiologyDone} />
+                                                            <input type="text" defaultValue={param.ref} className="border rounded p-2 text-sm text-gray-600" id={`lab-ref-${p.id}-${idx}-${pIdx}`} disabled={p.radiologyDone} />
+                                                          </div>
+                                                      ))}
+                                                    </div>
+                                                ))}
+                                              </div>
+
+                                              <div className="mt-2 border-2 border-dashed border-purple-200 rounded-lg p-3 bg-white">
+                                                <h5 className="text-xs font-bold text-purple-700 uppercase mb-2">Attach Radiology Images</h5>
+                                                <div className="flex flex-wrap gap-3">
+                                                  {(radiologyImages[p.id] || []).map(img => (
+                                                      <div key={img.id} className="relative w-20 h-20 rounded-lg overflow-hidden border">
+                                                        <img src={img.dataUrl} alt={img.name} className="w-full h-full object-cover" />
+                                                        <button onClick={() => removeRadiologyImage(p.id, img.id)}
+                                                                className="absolute top-0.5 right-0.5 bg-black/60 text-white rounded-full w-5 h-5 text-xs flex items-center justify-center">×</button>
+                                                      </div>
+                                                  ))}
+                                                  {!p.radiologyDone && (
+                                                      <label className="w-20 h-20 rounded-lg border-2 border-dashed border-purple-300 flex flex-col items-center justify-center text-purple-400 cursor-pointer hover:border-purple-500 hover:text-purple-600 bg-white">
+                                                        <Plus size={18}/>
+                                                        <span className="text-[10px] mt-1">Add</span>
+                                                        <input type="file" accept="image/*" multiple onChange={(e) => handleRadiologyImageUpload(p.id, e)} className="hidden" />
+                                                      </label>
+                                                  )}
+                                                </div>
+                                              </div>
+
+                                              <button
+                                                  onClick={() => sendLabSection(p, 'radiology')}
+                                                  disabled={p.radiologyDone}
+                                                  className={`w-full mt-3 py-2 rounded-lg text-sm font-bold ${p.radiologyDone ? 'bg-green-100 text-green-700 cursor-not-allowed' : 'bg-purple-600 text-white hover:bg-purple-700'}`}
+                                              >
+                                                {p.radiologyDone ? '✓ Radiology Sent to Doctor' : 'Send Radiology to Doctor'}
+                                              </button>
+                                            </div>
+                                        )}
+
+                                        {/* ===== DIAGNOSTIC LAB SECTION (Path + Micro + Biochem + Other) ===== */}
+                                        {diagLabEntries.length > 0 && (
+                                            <div className="border-2 border-blue-200 rounded-lg p-3 bg-blue-50/40">
+                                              <h3 className="text-xs font-bold uppercase tracking-wider mb-2 px-2 py-1 rounded inline-block bg-blue-100 text-blue-700">
+                                                Diagnostic Lab (Pathology / Microbiology / Biochemistry)
+                                              </h3>
+                                              <div className="space-y-2">
+                                                {diagLabEntries.map(({ inv, idx }) => (
+                                                    <div key={idx} className="border rounded-lg p-3 bg-white">
+                                                      <h4 className="text-sm font-bold text-gray-700 mb-2 flex items-center gap-2">
+                                                        {inv}
+                                                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">{getTestCategory(inv)}</span>
+                                                      </h4>
+                                                      {getTestParams(inv).map((param, pIdx) => (
+                                                          <div key={pIdx} className="grid grid-cols-3 gap-2 items-center mb-2">
+                                                            <span className="text-xs text-gray-600">{param.name}</span>
+                                                            <input type="text" placeholder="Value" className="border rounded p-2 text-sm" id={`lab-val-${p.id}-${idx}-${pIdx}`} disabled={p.diagLabDone} />
+                                                            <input type="text" defaultValue={param.ref} className="border rounded p-2 text-sm text-gray-600" id={`lab-ref-${p.id}-${idx}-${pIdx}`} disabled={p.diagLabDone} />
+                                                          </div>
+                                                      ))}
+                                                    </div>
+                                                ))}
+                                              </div>
+
+                                              <button
+                                                  onClick={() => sendLabSection(p, 'diaglab')}
+                                                  disabled={p.diagLabDone}
+                                                  className={`w-full mt-3 py-2 rounded-lg text-sm font-bold ${p.diagLabDone ? 'bg-green-100 text-green-700 cursor-not-allowed' : 'bg-blue-600 text-white hover:bg-blue-700'}`}
+                                              >
+                                                {p.diagLabDone ? '✓ Diagnostic Lab Sent to Doctor' : 'Send Diagnostic Lab to Doctor'}
+                                              </button>
+                                            </div>
+                                        )}
+                                      </div>
+                                  );
+                                })()}
+                              </div>
+                          ))}
+                        </div>
                     )}
                   </div>
               )}
@@ -2712,8 +3827,19 @@ Based on the complete patient summary above (symptoms, manual history, negative 
                           patients.</p>
                       </div>
                     </div>
+                    <div className="bg-white p-3 rounded-xl border shadow-sm flex items-center gap-2">
+                      <Search size={16} className="text-gray-400 shrink-0"/>
+                      <input
+                          type="text"
+                          value={pharmacySearch}
+                          onChange={(e) => setPharmacySearch(e.target.value)}
+                          placeholder="Search by UHID or patient name..."
+                          className="w-full outline-none text-sm"
+                      />
+                    </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+
                       <div className="bg-white p-6 rounded-xl border shadow-sm mt-6">
                         <h3 className="text-lg font-bold text-gray-800 mb-4">Pharmacy Inventory</h3>
 
@@ -2795,7 +3921,9 @@ Based on the complete patient summary above (symptoms, manual history, negative 
                           </tbody>
                         </table>
                       </div>
-                      {patients.filter(p => p.status === 'Pharmacy').length === 0 ? (
+
+                      {patients.filter(p => p.status === 'Pharmacy' && matchesSearch(p, pharmacySearch)).length === 0 ? (
+
                           <div
                               className="col-span-full bg-white p-12 rounded-xl border border-dashed border-gray-300 text-center text-gray-500 flex flex-col items-center">
                             <CheckCircle2 size={48} className="text-green-300 mb-4"/>
@@ -2803,7 +3931,8 @@ Based on the complete patient summary above (symptoms, manual history, negative 
                             <p className="text-sm mt-1">No pending prescriptions to dispense.</p>
                           </div>
                       ) : (
-                          patients.filter(p => p.status === 'Pharmacy').map(p => (
+                          patients.filter(p => p.status === 'Pharmacy' && matchesSearch(p, pharmacySearch)).map(p => (
+
                               <div key={p.id}
                                    className="bg-white rounded-xl border shadow-sm overflow-hidden flex flex-col">
                                 <div className="p-4 bg-gray-50 border-b flex justify-between items-start">
