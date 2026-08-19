@@ -663,47 +663,86 @@ You MUST return your response as a valid JSON object matching exactly this schem
 
   const TEST_CATEGORY_KEYWORDS = {
     Radiology: [
-      'x-ray', 'xray', 'x ray', 'cxr', 'axr', 'kud', 'kub',
-      'usg', 'ultrasound', 'sonography', 'sono', 'doppler', 'anomaly scan', 'nt scan',
-      'ct', 'ct scan', 'hrct', 'cect', 'ncct', 'mri', 'mra', 'mrv',
-      'echo', '2d echo', 'ecg', 'ekg', 'tmt', 'holter', 'eeg', 'emg', 'ncv',
-      'mammography', 'mammogram', 'dexa', 'bmd', 'fluoroscopy', 'barium', 'pft', 'spirometry'
+      'x-ray', 'xray', 'x ray', 'radiograph', 'radiography', 'cxr', 'axr', 'kud', 'kub',
+      'usg', 'ultrasound', 'ultrasonography', 'sonography', 'sono', 'doppler', 'anomaly scan',
+      'nt scan', 'nuchal translucency', 'tvs', 'tas',
+      'ct', 'ct scan', 'hrct', 'cect', 'ncct', 'ct angio', 'ct angiography',
+      'mri', 'mra', 'mrv', 'mrcp',
+      'echo', '2d echo', 'echocardiography', 'echocardiogram',
+      'ecg', 'ekg', 'tmt', 'treadmill', 'holter', 'eeg', 'emg', 'ncv', 'nerve conduction',
+      'mammography', 'mammogram', 'dexa', 'bmd', 'bone density',
+      'fluoroscopy', 'barium', 'barium swallow', 'barium meal',
+      'pft', 'spirometry', 'pulmonary function',
+      'chest pa', 'pa view', 'ap view', 'lateral view',
+      'angiography', 'angiogram', 'venogram', 'venography',
+      'scan', 'imaging', 'radiology',
     ],
 
     Microbiology: [
-      'culture', 'sensitivity', 'c/s', 'gram stain', 'afb', 'zn stain', 'cbnaat', 'gene xpert', 'truenat',
-      'widal', 'malaria', 'mp', 'smear for mp', 'dengue', 'ns1', 'chikungunya', 'typhidot',
-      'covid', 'rt-pcr', 'rtpcr', 'rapid antigen', 'rat',
-      'stool routine', 'stool examination', 'stool r/m', 'stool occult',
-      'urine culture', 'blood culture', 'sputum', 'pus culture', 'swab',
-      'vdrl', 'rpr', 'tpha', 'hbsag', 'hcv', 'hiv', 'elisa', 'torch'
+      'culture', 'sensitivity', 'c/s', 'c&s', 'gram stain', 'afb', 'zn stain',
+      'cbnaat', 'gene xpert', 'genexpert', 'truenat', 'nat test',
+      'widal', 'malaria', 'mp', 'smear for mp', 'peripheral smear for mp',
+      'dengue', 'ns1', 'dengue igm', 'dengue igg', 'chikungunya', 'typhidot',
+      'covid', 'rt-pcr', 'rtpcr', 'rapid antigen', 'rat', 'covid antigen',
+      'stool routine', 'stool examination', 'stool r/m', 'stool r m', 'stool occult',
+      'stool microscopy', 'stool ova', 'ova and cyst', 'ova cyst',
+      'urine culture', 'blood culture', 'sputum', 'sputum culture', 'sputum afb',
+      'pus culture', 'wound swab', 'swab', 'throat swab', 'nasal swab',
+      'vdrl', 'rpr', 'tpha', 'hbsag', 'hcv', 'hiv', 'elisa', 'torch',
+      'kit test', 'antigen test', 'antibody test', 'serology',
     ],
 
     Biochemistry: [
-      'lft', 'liver function', 'bilirubin', 'sgot', 'ast', 'sgpt', 'alt', 'alkaline phosphatase', 'alp', 'protein', 'albumin',
-      'rft', 'kft', 'renal function', 'kidney function', 'creatinine', 'urea', 'bun', 'uric acid',
-      'blood sugar', 'rbs', 'fbs', 'ppbs', 'pp2bs', 'ogtt', 'hba1c',
-      'lipid', 'cholesterol', 'triglycerides', 'hdl', 'ldl', 'vldl',
-      'electrolyte', 'sodium', 'potassium', 'chloride', 'calcium', 'phosphorus', 'magnesium',
-      'crp', 'hs-crp', 'procalcitonin', 'ferritin', 'troponin', 'trop-i', 'trop-t', 'ck-mb', 'cpk', 'd-dimer', 'bnp', 'nt-probnp',
-      'amylase', 'lipase', 'ldh', 'serum iron', 'tibc', 'vitamin b12', 'vitamin d', 'vit d',
-      'tsh', 't3', 't4', 'ft3', 'ft4', 'thyroid profile', 'beta hcg', 'psa'
+      'lft', 'liver function', 'bilirubin', 'sgot', 'ast', 'sgpt', 'alt',
+      'alkaline phosphatase', 'alp', 'total protein', 'serum protein', 'albumin', 'globulin',
+      'rft', 'kft', 'renal function', 'kidney function', 'serum creatinine', 'creatinine',
+      'blood urea', 'urea', 'bun', 'uric acid',
+      'blood sugar', 'rbs', 'fbs', 'ppbs', 'pp2bs', 'ogtt', 'hba1c', 'glycated hemoglobin',
+      'glucose', 'random blood sugar', 'fasting blood sugar',
+      'lipid profile', 'lipid', 'cholesterol', 'triglycerides', 'hdl', 'ldl', 'vldl',
+      'electrolyte', 'serum electrolytes', 'sodium', 'potassium', 'chloride',
+      'calcium', 'serum calcium', 'phosphorus', 'magnesium',
+      'crp', 'c-reactive protein', 'hs-crp', 'procalcitonin', 'ferritin', 'serum ferritin',
+      'troponin', 'trop-i', 'trop-t', 'ck-mb', 'cpk', 'd-dimer', 'bnp', 'nt-probnp',
+      'amylase', 'lipase', 'ldh', 'serum iron', 'iron studies', 'tibc',
+      'vitamin b12', 'vit b12', 'vitamin d', 'vit d', '25-oh vitamin d',
+      'tsh', 't3', 't4', 'ft3', 'ft4', 'thyroid profile', 'thyroid function',
+      'beta hcg', 'b-hcg', 'bhcg', 'psa', 'metabolic panel', 'basic metabolic',
+      'comprehensive metabolic', 'ammonia', 'lactate', 'abg', 'arterial blood gas',
     ],
 
     Pathology: [
-      'cbc', 'complete blood count', 'hemogram', 'cbc with esr', 'esr', 'hemoglobin', 'hb',
-      'platelet', 'tlc', 'dlc', 'aec', 'reticulocyte', 'pcv', 'mcv', 'mch', 'mchc',
-      'peripheral smear', 'ps for study', 'ps for mp', 'bone marrow',
-      'coagulation', 'pt', 'pt-inr', 'inr', 'aptt', 'ptt', 'bleeding time', 'clotting time', 'bt', 'ct',
-      'urine routine', 'urine r/m', 'urine complete',
-      'biopsy', 'histopathology', 'hpe', 'cytology', 'fnac', 'pap smear', 'fluid analysis', 'csf routine', 'pleural fluid', 'ascitic fluid'
+      'cbc', 'complete blood count', 'hemogram', 'cbc with esr', 'esr',
+      'erythrocyte sedimentation', 'hemoglobin', 'hb ', 'hb%', 'blood count',
+      'platelet', 'tlc', 'total leukocyte', 'dlc', 'differential leukocyte',
+      'aec', 'absolute eosinophil', 'reticulocyte',
+      'pcv', 'hematocrit', 'mcv', 'mch', 'mchc', 'rdw',
+      'peripheral smear', 'ps for study', 'ps for mp', 'blood smear', 'bone marrow',
+      'coagulation', 'pt ', 'pt-inr', 'inr', 'aptt', 'ptt', 'bleeding time',
+      'clotting time', 'bt ', 'ct ', 'fibrinogen', 'coagulation profile',
+      'urine routine', 'urine r/m', 'urine r m', 'urine complete', 'urine microscopy',
+      'urine analysis', 'urinalysis',
+      'biopsy', 'histopathology', 'hpe', 'cytology', 'fnac',
+      'pap smear', 'fluid analysis', 'csf routine', 'csf analysis',
+      'pleural fluid', 'ascitic fluid', 'synovial fluid',
     ]
   };
+
 
   const getTestCategory = (testName) => {
     const lower = (testName || '').toLowerCase();
     for (const [category, keywords] of Object.entries(TEST_CATEGORY_KEYWORDS)) {
-      if (keywords.some(kw => lower.includes(kw))) return category;
+      const matched = keywords.some(kw => {
+        // Multi-word keywords (jema space hoy) ne simple substring thi j check karo
+        if (kw.includes(' ') || kw.includes('-') || kw.includes('/')) {
+          return lower.includes(kw);
+        }
+        // Single-word keywords ne WORD BOUNDARY thi check karo, jethi
+        // "electrolytes" ma "ct" jevu false match na thay
+        const re = new RegExp(`\\b${kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
+        return re.test(lower);
+      });
+      if (matched) return category;
     }
     return 'Other';
   };
@@ -835,6 +874,7 @@ You MUST return your response as a valid JSON object matching exactly this schem
       </div>
       <p><b>Patient:</b> ${patient.name} | <b>UHID:</b> ${patient.uhid} | <b>Age/Sex:</b> ${patient.age}/${patient.gender}</p>
       <p><b>Diagnosis:</b> ${(patient.diagnoses || []).join(', ')}</p>
+       <p><b>Lab Results:</b> ${patient.labResults || 'Pending / None'}</p>
       <hr/><h3>IPD Day-wise Orders</h3>
       ${daysHtml || '<p>No day-wise orders recorded.</p>'}
       <br/><p style="text-align:right;">Doctor's Signature: ___________________</p>
@@ -963,6 +1003,9 @@ You MUST return your response as a valid JSON object matching exactly this schem
     radiologyDone: row.radiology_done, diagLabDone: row.diag_lab_done,
     completedTests: row.completed_tests || [],
     dailyOrders: row.daily_orders || [],
+    nonPharmManagement: row.non_pharm_management || [],
+    followUpAdvice: row.follow_up_advice || '',
+    labImages: row.lab_images || [],
   });
 
   const fetchPatients = async () => {
@@ -1213,17 +1256,58 @@ You MUST return your response as a valid JSON object matching exactly this schem
           p.uhid.toLowerCase() === q || p.name.toLowerCase().includes(q)
       );
       if (existing) {
-        setPatients(patients.map(p =>
-            p.id === existing.id
-                ? {
-                  ...p,
-                  status: 'Nursing',
-                  complaint: newPatientOccupation || 'Follow-up visit',
-                  triage: newPatientTriage,
-                  vitals: null,
-                }
-                : p
-        ));
+
+        const resetPatch = {
+          status: 'Nursing',
+          complaint: newPatientOccupation || 'Follow-up visit',
+          triage: newPatientTriage,
+          vitals: null,
+          savedSymptoms: [],
+          savedNegativeHistory: [],
+          savedInvestigations: [],
+          savedExamValues: {},
+          savedAiResult: null,
+          savedSelectedDdx: [],
+          investigationsOrdered: [],
+          completedTests: [],
+          labStatus: null,
+          labResults: '',
+          labImages: [],
+          radiologyDone: false,
+          diagLabDone: false,
+          diagnoses: [],
+          prescriptions: [],
+          nonPharmManagement: [],
+          followUpAdvice: '',
+          dailyOrders: [],
+        };
+
+        setPatients(patients.map(p => p.id === existing.id ? { ...p, ...resetPatch } : p));
+
+        updatePatientInDb(existing.dbId, {
+          status: 'Nursing',
+          complaint: resetPatch.complaint,
+          triage: newPatientTriage,
+          vitals: null,
+          saved_symptoms: [],
+          saved_negative_history: [],
+          saved_investigations: [],
+          saved_exam_values: {},
+          saved_ai_result: null,
+          saved_selected_ddx: [],
+          investigations_ordered: [],
+          completed_tests: [],
+          lab_status: null,
+          lab_results: '',
+          radiology_done: false,
+          diag_lab_done: false,
+          diagnoses: [],
+          prescriptions: [],
+          non_pharm_management: [],
+          follow_up_advice: '',
+          daily_orders: [],
+        });
+
         setFollowUpUhid("");
         setNewPatientName('');
         setNewPatientAge('');
@@ -1340,6 +1424,8 @@ You MUST return your response as a valid JSON object matching exactly this schem
      
       Patient Profile: ${activePatient?.age}, ${activePatient?.gender}.
       Occupation: ${activePatient?.occupation}.
+      
+      Vitals: ${activePatient?.vitals ? `BP ${activePatient.vitals.bp} mmHg, Pulse ${activePatient.vitals.pulse} bpm, Temp ${activePatient.vitals.temp}°F, SpO2 ${activePatient.vitals.spo2}%` : 'Not recorded'}.
       Selected Clinical Findings & Symptoms: ${symNames}.
 Doctor's Manual History: ${manualHistory || 'Not provided'}.
 Negative History: ${selectedNegativeHistory.join(', ') || 'None confirmed'}.
@@ -1450,48 +1536,64 @@ Based on the complete patient summary above (symptoms, manual history, negative 
   const sendDiagnosisLabsToLab = () => {
     if (!activePatient || selectedAiLabs.length === 0) return;
     const mergedInvestigations = Array.from(new Set([...selectedInvestigations, ...selectedAiLabs]));
-    setPatients(patients.map(p =>
-        p.id === activePatient.id
-            ? {
-              ...p,
-              status: 'Doctor',
-              labStatus: 'Pending',
-              investigationsOrdered: mergedInvestigations,
-              savedNegativeHistory: selectedNegativeHistory || [],
-              savedInvestigations: mergedInvestigations,
-              savedExamValues: buildFinalExamValues(),
-              savedSymptoms: selectedSymptoms,
-              savedAiResult: aiResult,
-              savedSelectedDdx: selectedDdx,
-            }
-            : p
-    ));
+    const finalExamValues = buildFinalExamValues();
+    const patch = {
+      status: 'Doctor',
+      labStatus: 'Pending',
+      investigationsOrdered: mergedInvestigations,
+      savedNegativeHistory: selectedNegativeHistory || [],
+      savedInvestigations: mergedInvestigations,
+      savedExamValues: finalExamValues,
+      savedSymptoms: selectedSymptoms,
+      savedAiResult: aiResult,
+      savedSelectedDdx: selectedDdx,
+    };
+    setPatients(patients.map(p => p.id === activePatient.id ? { ...p, ...patch } : p));
+    updatePatientInDb(activePatient.dbId, {
+      status: 'Doctor',
+      lab_status: 'Pending',
+      investigations_ordered: mergedInvestigations,
+      saved_negative_history: patch.savedNegativeHistory,
+      saved_investigations: patch.savedInvestigations,
+      saved_exam_values: patch.savedExamValues,
+      saved_symptoms: patch.savedSymptoms,
+      saved_ai_result: patch.savedAiResult,
+      saved_selected_ddx: patch.savedSelectedDdx,
+    });
     setSelectedPatientId(null);
   };
 
   const sendToLab = () => {
     if (!activePatient) return;
-    setPatients(patients.map(p =>
-        p.id === activePatient.id
-            ? {
-              ...p,
-              status: 'Doctor', // દર્દી ડૉક્ટર પેનલમાં જ રહેશે
-              labStatus: 'Pending', // લેબ વાળા માટે નવું સ્ટેટસ
-              investigationsOrdered: selectedInvestigations || [],
-              savedNegativeHistory: selectedNegativeHistory || [],
-              savedInvestigations: selectedInvestigations || [],
-              savedExamValues: buildFinalExamValues(),
-              savedSymptoms: selectedSymptoms,
-              savedAiResult: aiResult,
-              savedSelectedDdx: selectedDdx,
-            }
-            : p
-    ));
-
+    const finalExamValues = buildFinalExamValues();
+    const patch = {
+      status: 'Doctor',
+      labStatus: 'Pending',
+      investigationsOrdered: selectedInvestigations || [],
+      savedNegativeHistory: selectedNegativeHistory || [],
+      savedInvestigations: selectedInvestigations || [],
+      savedExamValues: finalExamValues,
+      savedSymptoms: selectedSymptoms,
+      savedAiResult: aiResult,
+      savedSelectedDdx: selectedDdx,
+    };
+    setPatients(patients.map(p => p.id === activePatient.id ? { ...p, ...patch } : p));
+    updatePatientInDb(activePatient.dbId, {
+      status: 'Doctor',
+      lab_status: 'Pending',
+      investigations_ordered: patch.investigationsOrdered,
+      saved_negative_history: patch.savedNegativeHistory,
+      saved_investigations: patch.savedInvestigations,
+      saved_exam_values: patch.savedExamValues,
+      saved_symptoms: patch.savedSymptoms,
+      saved_ai_result: patch.savedAiResult,
+      saved_selected_ddx: patch.savedSelectedDdx,
+    });
   };
 
   const saveLabResults = (patientId, resultsText) => {
     const images = radiologyImages[patientId] || [];
+    const target = patients.find(p => p.id === patientId);
     setPatients(patients.map(p =>
         p.id === patientId
             ? {
@@ -1499,10 +1601,17 @@ Based on the complete patient summary above (symptoms, manual history, negative 
               labResults: resultsText,
               labImages: images,
               status: 'Doctor',
-              labStatus: 'Completed' // આનાથી દર્દી લેબમાંથી ક્લિયર થઈ જશે
+              labStatus: 'Completed'
             }
             : p
     ));
+    if (target) {
+      updatePatientInDb(target.dbId, {
+        lab_results: resultsText,
+        status: 'Doctor',
+        lab_status: 'Completed',
+      });
+    }
     setRadiologyImages(prev => {
       const next = { ...prev };
       delete next[patientId];
@@ -1519,6 +1628,7 @@ Based on the complete patient summary above (symptoms, manual history, negative 
     if (activePatient) {
       const finalExamValues = buildFinalExamValues();
       setPatients(prev => prev.map(p => p.id === activePatient.id ? { ...p, savedExamValues: finalExamValues } : p));
+      updatePatientInDb(activePatient.dbId, { saved_exam_values: finalExamValues });
     }
     setConsultStep('plan');
   };
@@ -1858,6 +1968,8 @@ Based on the complete patient summary above (symptoms, manual history, negative 
       diagnoses: acceptedDiagnosis,
       prescriptions: prescriptions,
       daily_orders: dailyOrdersPatch,
+      non_pharm_management: nonPharmManagement,
+      follow_up_advice: followUpAdvice,
     });
     setSelectedPatientId(null);
     setActiveTab(nextStatus === 'IPD' ? 'ipd' : 'pharmacy');
@@ -2032,6 +2144,13 @@ ${patient.followUpAdvice ? `
     localStorage.removeItem('medflow_role');
   };
 
+  const deletePatient = async (patient) => {
+    if (!window.confirm(`Delete patient "${patient.name}" (${patient.uhid})? This cannot be undone.`)) return;
+    const { error } = await supabase.from('patients').delete().eq('id', patient.dbId);
+    if (error) { alert('Could not delete patient: ' + error.message); return; }
+    setPatients(prev => prev.filter(p => p.id !== patient.id));
+  };
+
     const SidebarItem = ({icon: Icon, label, id, step}) => (
         <button onClick={() => setActiveTab(id)}
                 className={`w-full flex items-center px-4 py-3 text-sm font-medium transition-colors ${activeTab === id ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-slate-700 hover:text-white'}`}>
@@ -2187,6 +2306,7 @@ ${patient.followUpAdvice ? `
                           <th className="p-4">Address</th>
                           <th className="p-4">Triage</th>
                           <th className="p-4">Current Status</th>
+                          <th className="p-4">Action</th>
                         </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100 text-sm text-gray-700">
@@ -2217,6 +2337,18 @@ ${patient.followUpAdvice ? `
                           }`}>
                             {p.status}
                           </span>
+                              </td>
+
+                              <td className="p-4">
+                                {p.status === 'Nursing' && (
+                                    <button
+                                        onClick={() => deletePatient(p)}
+                                        className="text-red-500 hover:text-red-700 p-1.5 rounded hover:bg-red-50"
+                                        title="Delete mistaken registration"
+                                    >
+                                      <Trash2 size={16}/>
+                                    </button>
+                                )}
                               </td>
                             </tr>
                         ))}
@@ -2405,6 +2537,7 @@ ${patient.followUpAdvice ? `
                     )}
                   </div>
               )}
+
 
               {/* --- NURSING STATION TAB --- */}
               {activeTab === 'nursing' && (
