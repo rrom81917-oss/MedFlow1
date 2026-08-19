@@ -4,7 +4,7 @@ import {
   ArrowRight, HeartPulse, BrainCircuit,
   CheckCircle2, AlertTriangle, User, LogOut,
   Sparkles, Trash2, Mic, FileText, Check, ChevronRight,
-  ActivitySquare, Settings, BedDouble
+  ActivitySquare, Settings, BedDouble, Camera
 } from 'lucide-react';
 
 import { createClient } from '@supabase/supabase-js';
@@ -545,7 +545,7 @@ You MUST return your response as a valid JSON object matching exactly this schem
           'Authorization':  'Bearer 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'
         },
         body: JSON.stringify({
-          model: 'llama-3.3-70b-versatile',
+          model: 'openai/gpt-oss-120b',
           response_format: { type: 'json_object' },
           messages: [
             { role: 'system', content: 'You are an expert clinical assistant. Always respond with valid JSON only.' },
@@ -784,14 +784,19 @@ You MUST return your response as a valid JSON object matching exactly this schem
   const [ipdPrinted, setIpdPrinted] = useState({});
 
   const printIpdCasePaper = (patient) => {
-    const daysHtml = (patient.dailyOrders || []).map(day => `
+    const IPD_PRINT_DEFAULT_VITALS = { bp: '120/80', pulse: '78', temp: '98.6', spo2: '98' };
+    const daysHtml = (patient.dailyOrders || []).map(day => {
+      const v = day.vitals || IPD_PRINT_DEFAULT_VITALS;
+      return `
     <div style="margin-bottom:16px;">
       <h4 style="background:#f3f4f6; padding:6px 10px; margin:0 0 6px 0;">${day.label}</h4>
+      <p style="font-size:13px;"><b>Vitals:</b> BP ${v.bp || IPD_PRINT_DEFAULT_VITALS.bp}, Pulse ${v.pulse || IPD_PRINT_DEFAULT_VITALS.pulse}, Temp ${v.temp || IPD_PRINT_DEFAULT_VITALS.temp}, SpO2 ${v.spo2 || IPD_PRINT_DEFAULT_VITALS.spo2}</p>
       <p style="font-size:13px;"><b>Medications:</b> ${(day.meds || []).map(m => `${m.name} (${m.dosage}, ${m.duration})`).join('; ') || 'None'}</p>
       <p style="font-size:13px;"><b>Advice:</b> ${(day.advice || []).map(a => a.text).join('; ') || 'None'}</p>
       <p style="font-size:13px;"><b>Procedures:</b> ${(day.procedures || []).map(pr => pr.text).join('; ') || 'None'}</p>
     </div>
-  `).join('');
+  `;
+    }).join('');
     const printWindow = window.open('', '_blank');
     printWindow.document.write(`
     <html><head><title>IPD Case Paper - ${patient.name}</title></head>
@@ -880,12 +885,14 @@ You MUST return your response as a valid JSON object matching exactly this schem
         .eq('id', userId)
         .single();
     if (error || !data) { setLoginError('No hospital profile found for this login.'); return; }
+
+    const normalizedRole = (data.role || '').toString().trim().toLowerCase();
     setCurrentRole({
-      role: data.role,
+      role: normalizedRole,
       fullName: data.full_name,
       hospitalId: data.hospital_id,
       hospitalName: data.hospitals?.name,
-      tabs: ROLE_TABS[data.role] || [],
+      tabs: ROLE_TABS[normalizedRole] || [],
     });
     setIsLoggedIn(true);
     setActiveTab((ROLE_TABS[data.role] || [])[0]);
@@ -896,9 +903,13 @@ You MUST return your response as a valid JSON object matching exactly this schem
       if (session) loadProfile(session.user.id);
       setAuthLoading(false);
     });
-    const { data: listener } = supabase.auth.onAuthStateChange((_e, session) => {
-      if (session) loadProfile(session.user.id);
-      else { setIsLoggedIn(false); setCurrentRole(null); }
+    const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
+      if (session) {
+        loadProfile(session.user.id);
+      } else if (event === 'SIGNED_OUT') {
+        setIsLoggedIn(false);
+        setCurrentRole(null);
+      }
     });
     return () => listener.subscription.unsubscribe();
   }, []);
@@ -970,6 +981,7 @@ You MUST return your response as a valid JSON object matching exactly this schem
   const [ipdMedInputs, setIpdMedInputs] = useState({});           // { [patientId]: { name, dosage, duration } }
   const [ipdAdviceInputs, setIpdAdviceInputs] = useState({});// { [patientId]: adviceText }
   const [ipdProcedureInputs, setIpdProcedureInputs] = useState({}); // { [patientId]: procedureText }
+  const [ipdVitalInputs, setIpdVitalInputs] = useState({});         // { [patientId]: { bp, pulse, temp, spo2 } }
   const [pharmacySearch, setPharmacySearch] = useState('');
   const [labSearch, setLabSearch] = useState('');
   const [labCategoryFilter, setLabCategoryFilter] = useState('All');
@@ -1292,18 +1304,17 @@ You MUST return your response as a valid JSON object matching exactly this schem
 Doctor's Manual History: ${manualHistory || 'Not provided'}.
 Negative History: ${selectedNegativeHistory.join(', ') || 'None confirmed'}.
 Investigations Ordered: ${selectedInvestigations.join(', ') || 'None selected'}.
+
 General Examination Findings: ${
-        Object.entries(examValues)
-            .filter(([name]) => examSuggestions?.generalExamination?.some(p => p.name === name))
-            .map(([name, val]) => `${name}: ${val}`)
+        (examSuggestions?.generalExamination || [])
+            .map(param => `${param.name}: ${(examValues[param.name] && examValues[param.name].trim()) ? examValues[param.name] : (param.normalRange || 'Normal')}`)
             .join(', ') || 'Not documented'
     }.
 Systemic Examination Findings: ${
-        Object.entries(examValues)
-            .filter(([name]) => examSuggestions?.systemicExamination?.some(p => p.name === name))
-            .map(([name, val]) => `${name}: ${val}`)
+        (examSuggestions?.systemicExamination || [])
+            .map(param => `${param.name}: ${(examValues[param.name] && examValues[param.name].trim()) ? examValues[param.name] : (param.normalRange || 'Normal')}`)
             .join(', ') || 'Not documented'
-    }.
+    }. 
 ${activePatient?.labResults ? `Lab Investigation Results: ${activePatient.labResults}.` : ''}
       
 Based on the complete patient summary above (symptoms, manual history, negative history, examination findings, and investigations), and standard modern medicine textbook provide a highly accurate Provisional Differential Diagnosis (top 3-4 conditions, ranked by likelihood) and suggest any additional standard laboratory/radiological investigations not already ordered.
@@ -1312,6 +1323,7 @@ Based on the complete patient summary above (symptoms, manual history, negative 
       {
         "ddx": ["Diagnosis 1", "Diagnosis 2", "Diagnosis 3"],
         "labs": ["Investigation 1", "Investigation 2", "Investigation 3"]
+        "reasoning": "Short paragraph explaining the clinical reasoning behind the above differential diagnosis list."
       }
     `;
 
@@ -1337,7 +1349,7 @@ Based on the complete patient summary above (symptoms, manual history, negative 
           'Authorization': 'Bearer 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'
         },
         body: JSON.stringify({
-          model: hasImages ? "llama-3.2-90b-vision-preview" : "llama-3.3-70b-versatile",
+          model: "openai/gpt-oss-120b",
           response_format: {type: "json_object"},
           messages: [
             {
@@ -1464,6 +1476,10 @@ Based on the complete patient summary above (symptoms, manual history, negative 
     if (finalDx.length === 0) return;
     setAcceptedDiagnosis(finalDx);
     setNonPharmManagement([]);
+    if (activePatient) {
+      const finalExamValues = buildFinalExamValues();
+      setPatients(prev => prev.map(p => p.id === activePatient.id ? { ...p, savedExamValues: finalExamValues } : p));
+    }
     setConsultStep('plan');
   };
 
@@ -1517,7 +1533,7 @@ Based on the complete patient summary above (symptoms, manual history, negative 
             'Authorization': 'Bearer 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'
           },
           body: JSON.stringify({
-            model: "llama-3.3-70b-versatile",
+            model: "openai/gpt-oss-120b",
             response_format: {type: "json_object"},
             messages: [
               {
@@ -1602,7 +1618,14 @@ Based on the complete patient summary above (symptoms, manual history, negative 
 
   const addIpdDay = (patient) => {
     const days = patient.dailyOrders || [];
-    const newDay = { id: `day-${Date.now()}`, label: `Day ${days.length + 1}`, meds: [], advice: [], procedures: [] };
+    const lastDay = days[days.length - 1];
+    const newDay = {
+      id: `day-${Date.now()}`,
+      label: `Day ${days.length + 1}`,
+      meds: (lastDay?.meds || []).map(m => ({ ...m, id: Date.now() + Math.random() })),
+      advice: (lastDay?.advice || []).map(a => ({ ...a, id: Date.now() + Math.random() })),
+      procedures: (lastDay?.procedures || []).map(pr => ({ ...pr, id: Date.now() + Math.random() })),
+    };
     const updatedDays = [...days, newDay];
     saveIpdDailyOrders(patient, updatedDays);
     setIpdActiveDayMap(prev => ({ ...prev, [patient.id]: newDay.id }));
@@ -1680,6 +1703,36 @@ Based on the complete patient summary above (symptoms, manual history, negative 
         d.id === dayId ? { ...d, procedures: (d.procedures || []).filter(pr => pr.id !== procedureId) } : d
     );
     saveIpdDailyOrders(patient, updatedDays);
+  };
+
+  const IPD_DEFAULT_VITALS = { bp: '120/80', pulse: '78', temp: '98.6', spo2: '98' };
+
+  const handleIpdVitalInputChange = (patientId, field, value) => {
+    setIpdVitalInputs(prev => ({
+      ...prev,
+      [patientId]: { ...(prev[patientId] || {}), [field]: value },
+    }));
+  };
+
+  const saveIpdDayVitals = (patient) => {
+    const activeDay = getActiveIpdDay(patient);
+    if (!activeDay) return;
+    const input = ipdVitalInputs[patient.id] || {};
+    const finalVitals = {
+      bp: input.bp && input.bp.trim() ? input.bp.trim() : IPD_DEFAULT_VITALS.bp,
+      pulse: input.pulse && input.pulse.trim() ? input.pulse.trim() : IPD_DEFAULT_VITALS.pulse,
+      temp: input.temp && input.temp.trim() ? input.temp.trim() : IPD_DEFAULT_VITALS.temp,
+      spo2: input.spo2 && input.spo2.trim() ? input.spo2.trim() : IPD_DEFAULT_VITALS.spo2,
+    };
+    const updatedDays = (patient.dailyOrders || []).map(d =>
+        d.id === activeDay.id ? { ...d, vitals: finalVitals } : d
+    );
+    saveIpdDailyOrders(patient, updatedDays);
+    setIpdVitalInputs(prev => {
+      const next = { ...prev };
+      delete next[patient.id];
+      return next;
+    });
   };
 
 
@@ -2585,8 +2638,13 @@ ${patient.followUpAdvice ? `
                                         ))}
                                         <label className="w-20 h-20 rounded-lg border-2 border-dashed border-gray-300 flex flex-col items-center justify-center text-gray-400 cursor-pointer hover:border-indigo-400 hover:text-indigo-500">
                                           <Plus size={18}/>
-                                          <span className="text-[10px] mt-1">Add</span>
+                                          <span className="text-[10px] mt-1">Gallery</span>
                                           <input type="file" accept="image/*" multiple onChange={handleImageUpload} className="hidden" />
+                                        </label>
+                                        <label className="w-20 h-20 rounded-lg border-2 border-dashed border-gray-300 flex flex-col items-center justify-center text-gray-400 cursor-pointer hover:border-indigo-400 hover:text-indigo-500">
+                                          <Camera size={18}/>
+                                          <span className="text-[10px] mt-1">Camera</span>
+                                          <input type="file" accept="image/*" capture="environment" onChange={handleImageUpload} className="hidden" />
                                         </label>
                                       </div>
                                     </div>
@@ -2868,7 +2926,7 @@ ${patient.followUpAdvice ? `
                                                       type="text"
                                                       value={examValues[param.name] || ''}
                                                       onChange={(e) => setExamValue(param.name, e.target.value)}
-                                                      placeholder={`Normal: ${param.normalRange}`}
+                                                      placeholder={`Normal: ${param.normalRange || 'Normal'}`}
                                                       className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
                                                   />
                                                 </div>
@@ -2989,7 +3047,7 @@ ${patient.followUpAdvice ? `
                                           <div className="grid grid-cols-2 gap-2">
 
                                             {examSuggestions.generalExamination?.map((param, i) => {
-                                              const displayValue = examValues[param.name] || `Normal: ${param.normalRange}`;
+                                              const displayValue = examValues[param.name] || `Normal: ${param.normalRange || 'Normal'}`;
                                               return (
                                                   <p key={`gen-${i}`} className="text-sm text-gray-800">
                                                     <span className="text-gray-500">{param.name}:</span> {displayValue}
@@ -2998,7 +3056,7 @@ ${patient.followUpAdvice ? `
                                             })}
 
                                             {examSuggestions.systemicExamination?.map((param, i) => {
-                                              const displayValue = examValues[param.name] || `Normal: ${param.normalRange}`;
+                                              const displayValue = examValues[param.name] || `Normal: ${param.normalRange || 'Normal'}`;
                                               return (
                                                   <p key={`sys-${i}`} className="text-sm text-gray-800">
                                                     <span className="text-gray-500">{param.name}:</span> {displayValue}
@@ -3101,6 +3159,7 @@ ${patient.followUpAdvice ? `
                                               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
                                           />
                                         </div>
+
                                         <div className="bg-white p-5 rounded-xl border border-indigo-100 shadow-sm">
                                           <h4 className="text-sm font-bold text-indigo-900 uppercase tracking-wider mb-4 border-b border-indigo-50 pb-2">Possible Conditions (Select to accept)</h4>
                                           <div className="space-y-2">
@@ -3113,6 +3172,12 @@ ${patient.followUpAdvice ? `
                                                 </label>
                                             ))}
                                           </div>
+                                          {aiResult.reasoning && (
+                                              <div className="mt-4 pt-3 border-t border-indigo-50 bg-indigo-50/50 rounded-lg p-3">
+                                                <h5 className="text-[11px] font-bold text-indigo-700 uppercase tracking-wider mb-1">AI Reasoning (for reference only — not printed)</h5>
+                                                <p className="text-xs text-gray-600 leading-relaxed">{aiResult.reasoning}</p>
+                                              </div>
+                                          )}
                                         </div>
 
                                         <div className="bg-white p-5 rounded-xl border border-blue-100 shadow-sm">
@@ -3146,7 +3211,7 @@ ${patient.followUpAdvice ? `
                                           >
                                             🧪 Send to Lab {selectedAiLabs.length > 0 ? `(${selectedAiLabs.length})` : ''}
                                           </button>
-                                          <button onClick={acceptDiagnosis} disabled={selectedDdx.length === 0} className="bg-indigo-600 text-white px-6 py-2.5 rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-indigo-700 transition-all disabled:opacity-50 shadow-sm">
+                                          <button onClick={acceptDiagnosis} disabled={selectedDdx.length === 0 && !manualDiagnosis.trim()} className="bg-indigo-600 text-white px-6 py-2.5 rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-indigo-700 transition-all disabled:opacity-50 shadow-sm">
                                             Accept & Continue to Plan <ArrowRight size={16}/>
                                           </button>
                                         </div>
@@ -3484,8 +3549,31 @@ ${patient.followUpAdvice ? `
                                 ) : (() => {
                                   const activeDay = getActiveIpdDay(p);
                                   if (!activeDay) return null;
+
                                   return (
                                       <div className="border rounded-lg p-3 bg-gray-50 space-y-4">
+                                        {/* Vitals for this day */}
+                                        <div>
+                                          <h5 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Vitals — {activeDay.label}</h5>
+                                          {activeDay.vitals ? (
+                                              <div className="grid grid-cols-4 gap-2 mb-2 bg-white border rounded-lg p-2">
+                                                <div><p className="text-[10px] text-gray-400">BP</p><p className="text-sm font-semibold">{activeDay.vitals.bp}</p></div>
+                                                <div><p className="text-[10px] text-gray-400">Pulse</p><p className="text-sm font-semibold">{activeDay.vitals.pulse}</p></div>
+                                                <div><p className="text-[10px] text-gray-400">Temp</p><p className="text-sm font-semibold">{activeDay.vitals.temp}</p></div>
+                                                <div><p className="text-[10px] text-gray-400">SpO2</p><p className="text-sm font-semibold">{activeDay.vitals.spo2}</p></div>
+                                              </div>
+                                          ) : (
+                                              <p className="text-sm text-gray-400 italic mb-2"> recorded — by dr/nurse.</p>
+                                          )}
+                                          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                                            <input type="text" placeholder="BP (120/80)" value={ipdVitalInputs[p.id]?.bp || ''} onChange={(e) => handleIpdVitalInputChange(p.id, 'bp', e.target.value)} className="border rounded-lg px-2 py-2 text-sm focus:ring-2 focus:ring-red-400 outline-none" />
+                                            <input type="text" placeholder="Pulse (78)" value={ipdVitalInputs[p.id]?.pulse || ''} onChange={(e) => handleIpdVitalInputChange(p.id, 'pulse', e.target.value)} className="border rounded-lg px-2 py-2 text-sm focus:ring-2 focus:ring-red-400 outline-none" />
+                                            <input type="text" placeholder="Temp (98.6)" value={ipdVitalInputs[p.id]?.temp || ''} onChange={(e) => handleIpdVitalInputChange(p.id, 'temp', e.target.value)} className="border rounded-lg px-2 py-2 text-sm focus:ring-2 focus:ring-red-400 outline-none" />
+                                            <input type="text" placeholder="SpO2 (98)" value={ipdVitalInputs[p.id]?.spo2 || ''} onChange={(e) => handleIpdVitalInputChange(p.id, 'spo2', e.target.value)} className="border rounded-lg px-2 py-2 text-sm focus:ring-2 focus:ring-red-400 outline-none" />
+                                            <button onClick={() => saveIpdDayVitals(p)} className="bg-red-600 text-white px-3 py-2 rounded-lg text-sm font-medium hover:bg-red-700">Save Vitals</button>
+                                          </div>
+                                        </div>
+
                                         {/* Medications for this day */}
                                         <div>
                                           <h5 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Medications — {activeDay.label}</h5>
@@ -3742,11 +3830,18 @@ ${patient.followUpAdvice ? `
                                                       </div>
                                                   ))}
                                                   {!p.radiologyDone && (
-                                                      <label className="w-20 h-20 rounded-lg border-2 border-dashed border-purple-300 flex flex-col items-center justify-center text-purple-400 cursor-pointer hover:border-purple-500 hover:text-purple-600 bg-white">
-                                                        <Plus size={18}/>
-                                                        <span className="text-[10px] mt-1">Add</span>
-                                                        <input type="file" accept="image/*" multiple onChange={(e) => handleRadiologyImageUpload(p.id, e)} className="hidden" />
-                                                      </label>
+                                                      <>
+                                                        <label className="w-20 h-20 rounded-lg border-2 border-dashed border-purple-300 flex flex-col items-center justify-center text-purple-400 cursor-pointer hover:border-purple-500 hover:text-purple-600 bg-white">
+                                                          <Plus size={18}/>
+                                                          <span className="text-[10px] mt-1">Gallery</span>
+                                                          <input type="file" accept="image/*" multiple onChange={(e) => handleRadiologyImageUpload(p.id, e)} className="hidden" />
+                                                        </label>
+                                                        <label className="w-20 h-20 rounded-lg border-2 border-dashed border-purple-300 flex flex-col items-center justify-center text-purple-400 cursor-pointer hover:border-purple-500 hover:text-purple-600 bg-white">
+                                                          <Camera size={18}/>
+                                                          <span className="text-[10px] mt-1">Camera</span>
+                                                          <input type="file" accept="image/*" capture="environment" onChange={(e) => handleRadiologyImageUpload(p.id, e)} className="hidden" />
+                                                        </label>
+                                                      </>
                                                   )}
                                                 </div>
                                               </div>
