@@ -7,13 +7,7 @@ import {
   ActivitySquare, Settings, BedDouble, Camera
 } from 'lucide-react';
 
-import { createClient } from '@supabase/supabase-js';
-console.log('URL:', import.meta.env.VITE_SUPABASE_URL);
-console.log('ALL ENV:', import.meta.env);
-const supabase = createClient(
-    import.meta.env.VITE_SUPABASE_URL,
-    import.meta.env.VITE_SUPABASE_ANON_KEY
-);
+import { supabase } from './lib/supabaseClient';
 import React, { useState, useEffect } from 'react';
 // --- Grok API Configuration ---
 const GROK_API_KEY = "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";
@@ -473,12 +467,12 @@ const ROLE_TABS = {
   admin: ['reception', 'nursing', 'doctor',  'ipd', 'lab', 'review', 'pharmacy', 'settings'],
   reception: ['reception'],
   nursing: ['nursing'],
+  nurse: ['nursing'],
   doctor: ['doctor'],
   ipd: ['ipd'],
   lab: ['lab'],
   pharmacy: ['pharmacy'],
 };
-
 export default function MedFlowApp() {
 
 // Exam & Investigation Suggestion State
@@ -668,10 +662,42 @@ You MUST return your response as a valid JSON object matching exactly this schem
   };
 
   const TEST_CATEGORY_KEYWORDS = {
-    Radiology: ['x-ray', 'xray', 'usg', 'ultrasound', 'ct scan', 'ct ', 'mri', 'sonography', 'doppler', 'echo', 'ecg', 'ekg', 'mammography', 'fluoroscopy'],
-    Microbiology: ['culture', 'sensitivity', 'gram stain', 'afb', 'widal', 'malaria', 'dengue', 'covid', 'rapid antigen', 'stool routine', 'urine routine', 'urine culture', 'blood culture', 'sputum'],
-    Biochemistry: ['lft', 'rft', 'blood sugar', 'rbs', 'fbs', 'ppbs', 'hba1c', 'lipid', 'creatinine', 'urea', 'electrolyte', 'calcium', 'uric acid', 'amylase', 'lipase', 'troponin', 'cardiac'],
-    Pathology: ['cbc', 'esr', 'hemoglobin', 'platelet', 'coagulation', 'pt', 'inr', 'aptt', 'peripheral smear', 'biopsy', 'histopathology', 'cytology', 'bone marrow'],
+    Radiology: [
+      'x-ray', 'xray', 'x ray', 'cxr', 'axr', 'kud', 'kub',
+      'usg', 'ultrasound', 'sonography', 'sono', 'doppler', 'anomaly scan', 'nt scan',
+      'ct', 'ct scan', 'hrct', 'cect', 'ncct', 'mri', 'mra', 'mrv',
+      'echo', '2d echo', 'ecg', 'ekg', 'tmt', 'holter', 'eeg', 'emg', 'ncv',
+      'mammography', 'mammogram', 'dexa', 'bmd', 'fluoroscopy', 'barium', 'pft', 'spirometry'
+    ],
+
+    Microbiology: [
+      'culture', 'sensitivity', 'c/s', 'gram stain', 'afb', 'zn stain', 'cbnaat', 'gene xpert', 'truenat',
+      'widal', 'malaria', 'mp', 'smear for mp', 'dengue', 'ns1', 'chikungunya', 'typhidot',
+      'covid', 'rt-pcr', 'rtpcr', 'rapid antigen', 'rat',
+      'stool routine', 'stool examination', 'stool r/m', 'stool occult',
+      'urine culture', 'blood culture', 'sputum', 'pus culture', 'swab',
+      'vdrl', 'rpr', 'tpha', 'hbsag', 'hcv', 'hiv', 'elisa', 'torch'
+    ],
+
+    Biochemistry: [
+      'lft', 'liver function', 'bilirubin', 'sgot', 'ast', 'sgpt', 'alt', 'alkaline phosphatase', 'alp', 'protein', 'albumin',
+      'rft', 'kft', 'renal function', 'kidney function', 'creatinine', 'urea', 'bun', 'uric acid',
+      'blood sugar', 'rbs', 'fbs', 'ppbs', 'pp2bs', 'ogtt', 'hba1c',
+      'lipid', 'cholesterol', 'triglycerides', 'hdl', 'ldl', 'vldl',
+      'electrolyte', 'sodium', 'potassium', 'chloride', 'calcium', 'phosphorus', 'magnesium',
+      'crp', 'hs-crp', 'procalcitonin', 'ferritin', 'troponin', 'trop-i', 'trop-t', 'ck-mb', 'cpk', 'd-dimer', 'bnp', 'nt-probnp',
+      'amylase', 'lipase', 'ldh', 'serum iron', 'tibc', 'vitamin b12', 'vitamin d', 'vit d',
+      'tsh', 't3', 't4', 'ft3', 'ft4', 'thyroid profile', 'beta hcg', 'psa'
+    ],
+
+    Pathology: [
+      'cbc', 'complete blood count', 'hemogram', 'cbc with esr', 'esr', 'hemoglobin', 'hb',
+      'platelet', 'tlc', 'dlc', 'aec', 'reticulocyte', 'pcv', 'mcv', 'mch', 'mchc',
+      'peripheral smear', 'ps for study', 'ps for mp', 'bone marrow',
+      'coagulation', 'pt', 'pt-inr', 'inr', 'aptt', 'ptt', 'bleeding time', 'clotting time', 'bt', 'ct',
+      'urine routine', 'urine r/m', 'urine complete',
+      'biopsy', 'histopathology', 'hpe', 'cytology', 'fnac', 'pap smear', 'fluid analysis', 'csf routine', 'pleural fluid', 'ascitic fluid'
+    ]
   };
 
   const getTestCategory = (testName) => {
@@ -703,38 +729,39 @@ You MUST return your response as a valid JSON object matching exactly this schem
     }).join('; ');
   };
 
+
   const sendLabSection = (patient, section) => {
-    // section: 'radiology' ke 'diaglab'
     const invList = patient.investigationsOrdered && patient.investigationsOrdered.length > 0 ? patient.investigationsOrdered : ['General Test'];
+    const completed = patient.completedTests || [];
     const entries = invList
         .map((inv, idx) => ({ inv, idx }))
-        .filter(({ inv }) => (section === 'radiology' ? getTestCategory(inv) === 'Radiology' : getTestCategory(inv) !== 'Radiology'));
+        .filter(({ inv }) => (section === 'radiology' ? getTestCategory(inv) === 'Radiology' : getTestCategory(inv) !== 'Radiology'))
+        .filter(({ inv }) => !completed.includes(inv)); // sirf je test na thayela hoy e j moklo
     if (entries.length === 0) return;
 
     const combined = collectTestResults(patient.id, entries);
     const images = section === 'radiology' ? (radiologyImages[patient.id] || []) : [];
     const sectionLabel = section === 'radiology' ? 'RADIOLOGY' : 'DIAGNOSTIC LAB (Path/Micro/Biochem)';
 
-    const hasRadiology = invList.some(inv => getTestCategory(inv) === 'Radiology');
-    const hasDiagLab = invList.some(inv => getTestCategory(inv) !== 'Radiology');
+    const appended = `${sectionLabel}: ${combined}`;
+    const newResults = patient.labResults ? `${patient.labResults}; ${appended}` : appended;
+    const newCompletedTests = Array.from(new Set([...completed, ...entries.map(e => e.inv)]));
+    const allDone = invList.every(inv => newCompletedTests.includes(inv));
+    const newLabImages = section === 'radiology' ? [...(patient.labImages || []), ...images] : (patient.labImages || []);
+    const newStatus = allDone ? (patient.status === 'IPD' ? 'IPD' : 'Doctor') : patient.status;
+    const newLabStatus = allDone ? 'Completed' : 'Pending';
 
     setPatients(prev => prev.map(p => {
       if (p.id !== patient.id) return p;
-      const appended = `${sectionLabel}: ${combined}`;
-      const newResults = p.labResults ? `${p.labResults}; ${appended}` : appended;
-      const radiologyDone = section === 'radiology' ? true : p.radiologyDone;
-      const diagLabDone = section === 'diaglab' ? true : p.diagLabDone;
-      const overallDone = (!hasRadiology || radiologyDone) && (!hasDiagLab || diagLabDone);
-      return {
-        ...p,
-        labResults: newResults,
-        labImages: section === 'radiology' ? [...(p.labImages || []), ...images] : (p.labImages || []),
-        radiologyDone,
-        diagLabDone,
-        status: overallDone ? 'Doctor' : p.status,
-        labStatus: overallDone ? 'Completed' : 'Pending',
-      };
+      return { ...p, labResults: newResults, labImages: newLabImages, completedTests: newCompletedTests, status: newStatus, labStatus: newLabStatus };
     }));
+
+    updatePatientInDb(patient.dbId, {
+      lab_results: newResults,
+      completed_tests: newCompletedTests,
+      status: newStatus,
+      lab_status: newLabStatus,
+    });
 
     if (section === 'radiology') {
       setRadiologyImages(prev => {
@@ -744,6 +771,7 @@ You MUST return your response as a valid JSON object matching exactly this schem
       });
     }
   };
+
 
   const IV_KEYWORDS = ['inj.', 'inj ', 'injection', ' iv ', 'i.v.', 'intravenous', 'infusion', 'drip', 'iv fluid', 'ivf', 'blood transfusion',
 
@@ -887,6 +915,7 @@ You MUST return your response as a valid JSON object matching exactly this schem
     if (error || !data) { setLoginError('No hospital profile found for this login.'); return; }
 
     const normalizedRole = (data.role || '').toString().trim().toLowerCase();
+    console.log('DEBUG role:', JSON.stringify(normalizedRole), 'tabs:', ROLE_TABS[normalizedRole]);
     setCurrentRole({
       role: normalizedRole,
       fullName: data.full_name,
@@ -895,7 +924,7 @@ You MUST return your response as a valid JSON object matching exactly this schem
       tabs: ROLE_TABS[normalizedRole] || [],
     });
     setIsLoggedIn(true);
-    setActiveTab((ROLE_TABS[data.role] || [])[0]);
+    setActiveTab((ROLE_TABS[normalizedRole] || [])[0]);
   };
 
   useEffect(() => {
@@ -931,6 +960,8 @@ You MUST return your response as a valid JSON object matching exactly this schem
     savedExamValues: row.saved_exam_values, savedAiResult: row.saved_ai_result,
     savedSelectedDdx: row.saved_selected_ddx, investigationsOrdered: row.investigations_ordered,
     labStatus: row.lab_status, labResults: row.lab_results,
+    radiologyDone: row.radiology_done, diagLabDone: row.diag_lab_done,
+    completedTests: row.completed_tests || [],
     dailyOrders: row.daily_orders || [],
   });
 
@@ -982,6 +1013,7 @@ You MUST return your response as a valid JSON object matching exactly this schem
   const [ipdAdviceInputs, setIpdAdviceInputs] = useState({});// { [patientId]: adviceText }
   const [ipdProcedureInputs, setIpdProcedureInputs] = useState({}); // { [patientId]: procedureText }
   const [ipdVitalInputs, setIpdVitalInputs] = useState({});         // { [patientId]: { bp, pulse, temp, spo2 } }
+  const [ipdInvestigationInputs, setIpdInvestigationInputs] = useState({}); // { [patientId]: string }
   const [pharmacySearch, setPharmacySearch] = useState('');
   const [labSearch, setLabSearch] = useState('');
   const [labCategoryFilter, setLabCategoryFilter] = useState('All');
@@ -1051,12 +1083,20 @@ You MUST return your response as a valid JSON object matching exactly this schem
   const [medDuration, setMedDuration] = useState('3 Days');
 
   // Pharmacy Inventory State
-  // Pharmacy Inventory State — now loaded from Supabase per hospital
+  // Pharmacy Inventory State — loaded from Supabase per hospital + realtime sync
   const [inventory, setInventory] = useState([]);
   useEffect(() => {
     if (!currentRole?.hospitalId) return;
-    supabase.from('inventory').select('*').eq('hospital_id', currentRole.hospitalId)
+    const loadInv = () => supabase.from('inventory').select('*').eq('hospital_id', currentRole.hospitalId)
         .then(({ data }) => data && setInventory(data));
+    loadInv();
+    const channel = supabase
+        .channel(`inventory-${currentRole.hospitalId}`)
+        .on('postgres_changes',
+            { event: '*', schema: 'public', table: 'inventory', filter: `hospital_id=eq.${currentRole.hospitalId}` },
+            loadInv)
+        .subscribe();
+    return () => supabase.removeChannel(channel);
   }, [currentRole?.hospitalId]);
 
   const [editingStockId, setEditingStockId] = useState(null);
@@ -1735,6 +1775,37 @@ Based on the complete patient summary above (symptoms, manual history, negative 
     });
   };
 
+  const addIpdInvestigation = (patient) => {
+    const text = (ipdInvestigationInputs[patient.id] || '').trim();
+    if (!text) return;
+    const current = patient.investigationsOrdered || [];
+    if (current.includes(text)) return;
+    const updated = [...current, text];
+    const cat = getTestCategory(text);
+    const isRadiology = cat === 'Radiology';
+
+    const localPatch = {
+      investigationsOrdered: updated,
+      labStatus: 'Pending',
+      ...(isRadiology ? { radiologyDone: false } : { diagLabDone: false }),
+    };
+    const dbPatch = {
+      investigations_ordered: updated,
+      lab_status: 'Pending',
+      ...(isRadiology ? { radiology_done: false } : { diag_lab_done: false }),
+    };
+
+    setPatients(prev => prev.map(p => p.id === patient.id ? { ...p, ...localPatch } : p));
+    updatePatientInDb(patient.dbId, dbPatch);
+    setIpdInvestigationInputs(prev => ({ ...prev, [patient.id]: '' }));
+  };
+
+  const removeIpdInvestigation = (patient, item) => {
+    const updated = (patient.investigationsOrdered || []).filter(i => i !== item);
+    setPatients(prev => prev.map(p => p.id === patient.id ? { ...p, investigationsOrdered: updated } : p));
+    updatePatientInDb(patient.dbId, { investigations_ordered: updated });
+  };
+
 
   const finishConsultation = () => {
     if (!activePatient) return;
@@ -1809,28 +1880,30 @@ Based on the complete patient summary above (symptoms, manual history, negative 
       }));
     };
 
-  const updateStock = (id, newStock) => {
+  const updateStock = async (id, newStock) => {
+    const stockValue = parseInt(newStock) || 0;
     setInventory(inventory.map(item =>
-        item.id === id ? { ...item, stock: parseInt(newStock) || 0 } : item
+        item.id === id ? { ...item, stock: stockValue } : item
     ));
     setEditingStockId(null);
     setStockInput("");
+    const { error } = await supabase.from('inventory').update({ stock: stockValue }).eq('id', id);
+    if (error) console.error('Inventory update failed:', error);
   };
-  const addNewMedicine = () => {
-    if (!newMedName.trim()) return;
-    setInventory([
-      ...inventory,
-      {
-        id: Date.now(),
-        name: newMedName.trim(),
-        stock: parseInt(newMedStock) || 0,
-        lowStockThreshold: 30,
-      },
-    ]);
+
+  const addNewMedicine = async () => {
+    if (!newMedName.trim() || !currentRole?.hospitalId) return;
+    const { data: inserted, error } = await supabase.from('inventory').insert({
+      hospital_id: currentRole.hospitalId,
+      name: newMedName.trim(),
+      stock: parseInt(newMedStock) || 0,
+      lowStockThreshold: 30,
+    }).select().single();
+    if (error) { alert('Could not add medicine: ' + error.message); return; }
+    setInventory([...inventory, inserted]);
     setNewMedName("");
     setNewMedStock("");
   };
-
 
     const printPrescription = (patient) => {
 
@@ -2011,12 +2084,12 @@ ${patient.followUpAdvice ? `
     return (
         <div className="flex h-screen bg-gray-100 font-sans">
           {/* Sidebar */}
-          <div className="w-64 bg-[#1e2330] flex flex-col justify-between text-white flex-shrink-0 shadow-lg z-10 md:flex hidden">
+          <div className="w-64 bg-[#1e2330] flex flex-col justify-between text-white flex-shrink-0 shadow-lg z-10 md:flex">
             <div className="p-4 flex items-center space-x-3 border-b border-slate-700">
               <Activity className="text-blue-400 w-6 h-6"/>
               <div>
                 <h1 className="font-bold text-lg leading-tight">MedFlow AI</h1>
-                <p className="text-xs text-slate-400">Hospital Workflow Made PR</p>
+                <p className="text-xs text-slate-400"> AI Hospital Made by dr.Ram PR</p>
               </div>
             </div>
             <div className="flex-1 py-4 space-y-1">
@@ -2043,7 +2116,7 @@ ${patient.followUpAdvice ? `
               )}
             </div>
             <div className="p-4 border-t border-slate-700 mt-auto">
-              <div className="text-xs text-slate-400 mb-2">Logged in as: <span className="font-semibold text-white">{currentRole?.label}</span></div>
+              <div className="text-xs text-slate-400 mb-2">Logged in as: <span className="font-semibold text-white">{currentRole?.fullName}</span></div>
               <button
                   onClick={handleLogout}
                   className="w-full bg-red-600 text-white text-sm py-2 rounded-lg font-semibold"
@@ -2449,6 +2522,8 @@ ${patient.followUpAdvice ? `
                     </div>
                   </div>
               )}
+
+
 
               {/* --- DOCTOR CONSULTATION TAB --- */}
               {activeTab === 'doctor' && (
@@ -3114,25 +3189,6 @@ ${patient.followUpAdvice ? `
                                     </button>
                                   </div>
 
-                                  {activePatient?.labResults && (
-                                      <div className="bg-yellow-50 rounded-lg p-4 border border-yellow-200 mb-6">
-                                        <h4 className="text-xs font-bold text-yellow-700 uppercase tracking-wider mb-1">Lab Results</h4>
-                                        <p className="text-sm text-gray-800 whitespace-pre-wrap">{activePatient.labResults}</p>
-                                        {activePatient.labImages && activePatient.labImages.length > 0 && (
-                                            <div className="mt-3">
-                                              <h5 className="text-xs font-bold text-yellow-700 uppercase mb-2">Radiology Images</h5>
-                                              <div className="flex flex-wrap gap-2">
-                                                {activePatient.labImages.map(img => (
-                                                    <a key={img.id} href={img.dataUrl} target="_blank" rel="noreferrer">
-                                                      <img src={img.dataUrl} alt={img.name} className="w-24 h-24 rounded-lg object-cover border hover:opacity-80 transition-opacity" />
-                                                    </a>
-                                                ))}
-                                              </div>
-                                            </div>
-                                        )}
-                                      </div>
-                                  )}
-
                                   {aiLoading ? (
 
                                       <div className="flex-1 flex flex-col items-center justify-center text-indigo-600 space-y-4">
@@ -3454,9 +3510,11 @@ ${patient.followUpAdvice ? `
                                   )}
 
 
+
                                   <div className="p-4 bg-white border-t flex justify-between gap-3 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
                                     <button onClick={() => setConsultStep('diagnosis')} className="bg-white border text-gray-600 px-6 py-2.5 rounded-lg text-sm font-semibold hover:bg-gray-50">
                                       ← Back
+
                                     </button>
                                     <div className="flex items-center gap-4">
                                       <button onClick={() => printPrescription(activePatient)} className="bg-blue-600 text-white px-6 py-2.5 rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-blue-700 transition-colors shadow-sm">
@@ -3726,6 +3784,71 @@ ${patient.followUpAdvice ? `
 
                               </div>
 
+                              <div className="mt-4 border-t pt-4">
+                                <h5 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">
+                                  Investigations / Lab Orders
+                                </h5>
+                                {(p.investigationsOrdered || []).length === 0 ? (
+                                    <p className="text-sm text-gray-400 italic mb-2">No investigations ordered yet.</p>
+                                ) : (
+                                    <div className="flex flex-wrap gap-2 mb-2">
+                                      {(p.investigationsOrdered || []).map((inv, i) => {
+                                        const cat = getTestCategory(inv);
+                                        const isDone = (p.completedTests || []).includes(inv);
+                                        return (
+                                            <span key={i} className={`inline-flex items-center gap-1 border px-3 py-1.5 rounded-full text-sm ${
+                                                isDone ? 'bg-green-100 text-green-800 border-green-300' : 'bg-yellow-100 text-yellow-800 border-yellow-300'
+                                            }`}>
+                {inv}
+                                              <span className="text-[9px] font-bold">{isDone ? '✓ Done' : '⏳ Pending'}</span>
+                <button onClick={() => removeIpdInvestigation(p, inv)} className="ml-1 opacity-60 hover:opacity-100">&times;</button>
+              </span>
+                                        );
+                                      })}
+                                    </div>
+                                )}
+
+                                {/* NEW: Lab Results display for IPD */}
+                                {p.labResults && (
+                                    <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-2">
+                                      <h6 className="text-xs font-bold text-yellow-700 uppercase mb-1">Lab Results</h6>
+                                      <p className="text-sm text-gray-800 whitespace-pre-wrap">{p.labResults}</p>
+                                      {p.labImages && p.labImages.length > 0 && (
+                                          <div className="flex flex-wrap gap-2 mt-2">
+                                            {p.labImages.map(img => (
+                                                <a key={img.id} href={img.dataUrl} target="_blank" rel="noreferrer">
+                                                  <img src={img.dataUrl} alt={img.name} className="w-20 h-20 rounded-lg object-cover border" />
+                                                </a>
+                                            ))}
+                                          </div>
+                                      )}
+                                    </div>
+                                )}
+
+                                <div className="flex gap-2">
+                                  <input
+                                      type="text"
+                                      placeholder="e.g., CBC, RFT, X-Ray Chest..."
+                                      value={ipdInvestigationInputs[p.id] || ''}
+                                      onChange={(e) => setIpdInvestigationInputs(prev => ({ ...prev, [p.id]: e.target.value }))}
+                                      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addIpdInvestigation(p); } }}
+                                      className="flex-1 border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-400 outline-none"
+                                  />
+                                  <button
+                                      onClick={() => addIpdInvestigation(p)}
+                                      disabled={!(ipdInvestigationInputs[p.id] || '').trim()}
+                                      className={`px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-1 text-white transition-colors ${
+                                          p.labStatus === 'Pending' && !(ipdInvestigationInputs[p.id] || '').trim()
+                                              ? 'bg-gray-900 hover:bg-black'
+                                              : 'bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed'
+                                      }`}
+                                  >
+                                    <Plus size={16}/> {p.labStatus === 'Pending' ? 'Sent to Lab (Pending)' : 'Send to Lab'}
+                                  </button>
+                                </div>
+                              </div>
+
+
                               <div className="mt-3 flex justify-end gap-2">
                                 <button
                                     onClick={() => { printIpdCasePaper(p); setIpdPrinted(prev => ({ ...prev, [p.id]: true })); }}
@@ -3733,6 +3856,7 @@ ${patient.followUpAdvice ? `
                                 >
                                   🖨️ Print Case Paper
                                 </button>
+
                                 <button
                                     disabled={!ipdPrinted[p.id]}
                                     onClick={() => {
@@ -3793,8 +3917,10 @@ ${patient.followUpAdvice ? `
                                 <p className="text-sm text-gray-600 mb-2">Investigations ordered: {(p.investigationsOrdered || []).join(', ') || 'General'}</p>
                                 {(() => {
                                   const invList = p.investigationsOrdered && p.investigationsOrdered.length > 0 ? p.investigationsOrdered : ['General Test'];
-                                  const radiologyEntries = invList.map((inv, idx) => ({ inv, idx })).filter(({ inv }) => getTestCategory(inv) === 'Radiology');
-                                  const diagLabEntries = invList.map((inv, idx) => ({ inv, idx })).filter(({ inv }) => getTestCategory(inv) !== 'Radiology');
+
+                                  const completedList = p.completedTests || [];
+                                  const radiologyEntries = invList.map((inv, idx) => ({ inv, idx })).filter(({ inv }) => getTestCategory(inv) === 'Radiology' && !completedList.includes(inv));
+                                  const diagLabEntries = invList.map((inv, idx) => ({ inv, idx })).filter(({ inv }) => getTestCategory(inv) !== 'Radiology' && !completedList.includes(inv));
 
                                   return (
                                       <div className="space-y-5 mb-3">
