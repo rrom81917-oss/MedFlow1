@@ -490,6 +490,7 @@ export default function MedFlowApp() {
     doctorName: "Dr. Ramesh Tantiya, MBBS",
     contact: "+91 93276 81907",
     email: "abcd@gmail.com",
+    doctorSign: "/sign.png",
   });
   const updateHospitalInfo = (field, value) => {
     setHospitalInfo(prev => ({ ...prev, [field]: value }));
@@ -851,19 +852,21 @@ You MUST return your response as a valid JSON object matching exactly this schem
   const [ipdPrinted, setIpdPrinted] = useState({});
 
   const printIpdCasePaper = (patient) => {
-    const IPD_PRINT_DEFAULT_VITALS = { bp: '120/80', pulse: '78', temp: '98.6', spo2: '98' };
     const daysHtml = (patient.dailyOrders || []).map(day => {
-      const v = day.vitals || IPD_PRINT_DEFAULT_VITALS;
+      const vitalsLogStr = (day.vitalsLog || []).length > 0
+          ? (day.vitalsLog || []).map(v => `${v.time}: BP ${v.bp}, Pulse ${v.pulse}, Temp ${v.temp}, SpO2 ${v.spo2}`).join('<br/>')
+          : 'Not recorded';
       return `
     <div style="margin-bottom:16px;">
-      <h4 style="background:#f3f4f6; padding:6px 10px; margin:0 0 6px 0;">${day.label}</h4>
-      <p style="font-size:13px;"><b>Vitals:</b> BP ${v.bp || IPD_PRINT_DEFAULT_VITALS.bp}, Pulse ${v.pulse || IPD_PRINT_DEFAULT_VITALS.pulse}, Temp ${v.temp || IPD_PRINT_DEFAULT_VITALS.temp}, SpO2 ${v.spo2 || IPD_PRINT_DEFAULT_VITALS.spo2}</p>
+      <h4 style="background:#f3f4f6; padding:6px 10px; margin:0 0 6px 0;">${day.label}${day.date ? ` (${day.date})` : ''}</h4>
+      <p style="font-size:13px;"><b>Vitals:</b><br/>${vitalsLogStr}</p>
       <p style="font-size:13px;"><b>Medications:</b> ${(day.meds || []).map(m => `${m.name} (${m.dosage}, ${m.duration})`).join('; ') || 'None'}</p>
       <p style="font-size:13px;"><b>Advice:</b> ${(day.advice || []).map(a => a.text).join('; ') || 'None'}</p>
       <p style="font-size:13px;"><b>Procedures:</b> ${(day.procedures || []).map(pr => pr.text).join('; ') || 'None'}</p>
     </div>
   `;
     }).join('');
+
     const printWindow = window.open('', '_blank');
     printWindow.document.write(`
     <html><head><title>IPD Case Paper - ${patient.name}</title></head>
@@ -1005,7 +1008,11 @@ You MUST return your response as a valid JSON object matching exactly this schem
     dailyOrders: row.daily_orders || [],
     nonPharmManagement: row.non_pharm_management || [],
     followUpAdvice: row.follow_up_advice || '',
-    labImages: row.lab_images || [],
+    admittedAt: row.admitted_at || null,
+    dischargedAt: row.discharged_at || null,
+    dischargeOutcome: row.discharge_outcome || '',
+    dischargeConsent: row.discharge_consent || {},
+    dischargeSummary: row.discharge_summary || '',
   });
 
   const fetchPatients = async () => {
@@ -1057,6 +1064,24 @@ You MUST return your response as a valid JSON object matching exactly this schem
   const [ipdProcedureInputs, setIpdProcedureInputs] = useState({}); // { [patientId]: procedureText }
   const [ipdVitalInputs, setIpdVitalInputs] = useState({});         // { [patientId]: { bp, pulse, temp, spo2 } }
   const [ipdInvestigationInputs, setIpdInvestigationInputs] = useState({}); // { [patientId]: string }
+  const ipdVitalRefs = React.useRef({}); // { [patientId]: { time, bp, pulse, temp, spo2 } refs }
+
+  const setIpdVitalRef = (patientId, field, el) => {
+    if (!ipdVitalRefs.current[patientId]) ipdVitalRefs.current[patientId] = {};
+    ipdVitalRefs.current[patientId][field] = el;
+  };
+  // --- Discharge Modal State ---
+  const [showDischargeModal, setShowDischargeModal] = useState(false);
+  const [dischargeStep, setDischargeStep] = useState(1);
+  const [dischargePatient, setDischargePatient] = useState(null);
+  const [dischargeOutcome, setDischargeOutcome] = useState('');
+  const [consentGiverName, setConsentGiverName] = useState('');
+  const [consentRelation, setConsentRelation] = useState('');
+  const [consentMobile, setConsentMobile] = useState('');
+  const [consentReason, setConsentReason] = useState('');
+  const [dischargeSummary, setDischargeSummary] = useState('');
+  const [dischargeSummaryLoading, setDischargeSummaryLoading] = useState(false);
+  const [dischargeSummaryError, setDischargeSummaryError] = useState('');
   const [pharmacySearch, setPharmacySearch] = useState('');
   const [labSearch, setLabSearch] = useState('');
   const [labCategoryFilter, setLabCategoryFilter] = useState('All');
@@ -1755,6 +1780,15 @@ Based on the complete patient summary above (symptoms, manual history, negative 
     setNonPharmManagement(nonPharmManagement.filter((_, i) => i !== index));
   };
 
+  const getLatestVitals = (patient) => {
+    const days = patient.dailyOrders || [];
+    for (let i = days.length - 1; i >= 0; i--) {
+      const log = days[i].vitalsLog || [];
+      if (log.length > 0) return log[log.length - 1];
+    }
+    return patient.vitals || null;
+  };
+
   const getActiveIpdDay = (patient) => {
     const days = patient.dailyOrders || [];
     const activeId = ipdActiveDayMap[patient.id];
@@ -1772,9 +1806,11 @@ Based on the complete patient summary above (symptoms, manual history, negative 
     const newDay = {
       id: `day-${Date.now()}`,
       label: `Day ${days.length + 1}`,
+      date: new Date().toLocaleDateString('en-GB'),
       meds: (lastDay?.meds || []).map(m => ({ ...m, id: Date.now() + Math.random() })),
       advice: (lastDay?.advice || []).map(a => ({ ...a, id: Date.now() + Math.random() })),
       procedures: (lastDay?.procedures || []).map(pr => ({ ...pr, id: Date.now() + Math.random() })),
+      vitalsLog: [],
     };
     const updatedDays = [...days, newDay];
     saveIpdDailyOrders(patient, updatedDays);
@@ -1802,12 +1838,22 @@ Based on the complete patient summary above (symptoms, manual history, negative 
       dosage: input.dosage || '1-0-1',
       duration: input.duration || '1 Day',
       note: '',
+      given: false,
     };
     const updatedDays = (patient.dailyOrders || []).map(d =>
         d.id === activeDay.id ? { ...d, meds: [...d.meds, newMed] } : d
     );
     saveIpdDailyOrders(patient, updatedDays);
     setIpdMedInputs(prev => ({ ...prev, [patient.id]: { name: '', dosage: '1-0-1', duration: '1 Day' } }));
+  };
+
+  const toggleIpdMedGiven = (patient, dayId, medId) => {
+    const updatedDays = (patient.dailyOrders || []).map(d =>
+        d.id === dayId
+            ? { ...d, meds: d.meds.map(m => m.id === medId ? { ...m, given: !m.given } : m) }
+            : d
+    );
+    saveIpdDailyOrders(patient, updatedDays);
   };
 
   const removeIpdMedication = (patient, dayId, medId) => {
@@ -1855,7 +1901,189 @@ Based on the complete patient summary above (symptoms, manual history, negative 
     saveIpdDailyOrders(patient, updatedDays);
   };
 
+  const openDischargeModal = (patient) => {
+    setDischargePatient(patient);
+    setDischargeStep(1);
+    setDischargeOutcome('');
+    setConsentGiverName('');
+    setConsentRelation('');
+    setConsentMobile('');
+    setConsentReason('');
+    setDischargeSummary('');
+    setDischargeSummaryError('');
+    setShowDischargeModal(true);
+  };
+
+  const generateDischargeSummary = async () => {
+    if (!dischargePatient) return;
+    setDischargeSummaryLoading(true);
+    setDischargeSummaryError('');
+
+    const admissionStr = dischargePatient.admittedAt
+        ? new Date(dischargePatient.admittedAt).toLocaleString('en-IN')
+        : 'Not recorded';
+    const dischargeStr = new Date().toLocaleString('en-IN');
+
+    const latestVitals = getLatestVitals(dischargePatient);
+    const vitalsStr = latestVitals
+        ? `BP ${latestVitals.bp}, Pulse ${latestVitals.pulse}, Temp ${latestVitals.temp}, SpO2 ${latestVitals.spo2}${latestVitals.time ? ` (recorded at ${latestVitals.time})` : ''}`
+        : 'Not recorded';
+
+    const admissionVitalsStr = dischargePatient.vitals
+        ? `BP ${dischargePatient.vitals.bp}, Pulse ${dischargePatient.vitals.pulse}, Temp ${dischargePatient.vitals.temp}, SpO2 ${dischargePatient.vitals.spo2}`
+        : 'Not recorded';
+
+    const daysSummary = (dischargePatient.dailyOrders || []).map(day => {
+      const medsStr = (day.meds || []).map(m => `${m.name} (${m.dosage}, ${m.duration})`).join('; ') || 'None';
+      const adviceStr = (day.advice || []).map(a => a.text).join('; ') || 'None';
+      const procStr = (day.procedures || []).map(pr => pr.text).join('; ') || 'None';
+      const vitalsLogStr = (day.vitalsLog || []).map(v => `${v.time}: BP ${v.bp}, Pulse ${v.pulse}, Temp ${v.temp}, SpO2 ${v.spo2}`).join(' | ') || 'Not recorded';
+      return `${day.label}${day.date ? ` (${day.date})` : ''}: Vitals[${vitalsLogStr}]; Medications[${medsStr}]; Advice[${adviceStr}]; Procedures[${procStr}]`;
+    }).join('\n');
+
+    const consentStr = ['LAMA', 'DAMA', 'Referred', 'Death / Expired'].includes(dischargeOutcome)
+        ? `Consent Given By: ${consentGiverName || 'Not recorded'}, Relation: ${consentRelation || 'Not recorded'}, Mobile: ${consentMobile || 'Not recorded'}, Reason: ${consentReason || 'Not recorded'}`
+        : 'N/A';
+
+    const promptText = `
+You are a senior consultant preparing a formal Discharge Summary as per NABH/JCI documentation standards, using the same clinical reasoning depth as the diagnosis and treatment plan already generated for this patient.
+
+Patient: ${dischargePatient.name}, ${dischargePatient.age}, ${dischargePatient.gender}, UHID: ${dischargePatient.uhid}.
+Admission Date & Time: ${admissionStr}.
+Discharge Date & Time: ${dischargeStr}.
+Admission Vitals: ${admissionVitalsStr}.
+Latest/Discharge Vitals: ${vitalsStr}.
+Final Diagnosis: ${(dischargePatient.diagnoses || []).join(', ') || 'Not recorded'}.
+Day-wise Hospital Course:
+${daysSummary || 'Not recorded'}
+Discharge Outcome: ${dischargeOutcome}.
+${consentStr}
+
+Generate a complete, professional Discharge Summary including:
+1. Final Diagnosis
+2. Brief Hospital Course (chronological narrative)
+3. Condition at Discharge (based on latest vitals and outcome)
+4. Discharge Medications (clean list with dosage & duration; include tapering schedule if doses changed across days)
+5. Advice & Follow-up Instructions (in both English and Gujarati, clear and patient-friendly)
+6. Red Flag Warning Signs (when to return to hospital immediately)
+
+Keep the tone formal, clinical, and concise. Return ONLY the final discharge summary as plain readable text (not JSON, no markdown fences), formatted with clear section headings.
+`;
+
+    try {
+      const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer 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'
+        },
+        body: JSON.stringify({
+          model: 'openai/gpt-oss-120b',
+          messages: [
+            { role: 'system', content: 'You are an expert clinical documentation assistant. Return only plain text, no JSON, no markdown code fences.' },
+            { role: 'user', content: promptText }
+          ],
+        }),
+      });
+
+      if (!response.ok) {
+        setDischargeSummaryError(`Server error: ${response.status} ${response.statusText}`);
+        setDischargeSummaryLoading(false);
+        return;
+      }
+
+      const data = await response.json();
+      const resultText = data.choices?.[0]?.message?.content;
+      if (resultText) {
+        setDischargeSummary(resultText.trim());
+      } else {
+        setDischargeSummaryError('AI Engine returned an empty discharge summary.');
+      }
+    } catch (error) {
+      console.error('Discharge Summary AI Error:', error);
+      setDischargeSummaryError('Failed to generate discharge summary. Please try again.');
+    } finally {
+      setDischargeSummaryLoading(false);
+    }
+  };
+
+  const confirmDischargeAndSendToPharmacy = () => {
+    if (!dischargePatient) return;
+    const dischargedAt = new Date().toISOString();
+    const consent = ['LAMA', 'DAMA', 'Referred', 'Death / Expired'].includes(dischargeOutcome)
+        ? { name: consentGiverName, relation: consentRelation, mobile: consentMobile, reason: consentReason }
+        : {};
+
+    setPatients(prev => prev.map(pt => pt.id === dischargePatient.id
+        ? { ...pt, status: 'Pharmacy', dischargedAt, dischargeOutcome, dischargeConsent: consent, dischargeSummary }
+        : pt
+    ));
+
+    updatePatientInDb(dischargePatient.dbId, {
+      status: 'Pharmacy',
+      discharged_at: dischargedAt,
+      discharge_outcome: dischargeOutcome,
+      discharge_consent: consent,
+      discharge_summary: dischargeSummary,
+    });
+
+    setShowDischargeModal(false);
+    setDischargePatient(null);
+  };
+
+  const printDischargeSummary = (patient) => {
+    const admissionStr = patient.admittedAt ? new Date(patient.admittedAt).toLocaleString('en-IN') : 'Not recorded';
+    const dischargeStr = patient.dischargedAt ? new Date(patient.dischargedAt).toLocaleString('en-IN') : new Date().toLocaleString('en-IN');
+    const lastDay = (patient.dailyOrders || [])[(patient.dailyOrders || []).length - 1];
+    const meds = lastDay?.meds || [];
+    const medsHtml = meds.map(m => `
+      <tr>
+        <td style="padding:8px;border-bottom:1px solid #ddd;">${m.name}</td>
+        <td style="padding:8px;border-bottom:1px solid #ddd;">${m.dosage}</td>
+        <td style="padding:8px;border-bottom:1px solid #ddd;">${m.duration}</td>
+      </tr>
+    `).join('');
+
+    const printWindow = window.open('', '_blank');
+    printWindow.document.write(`
+      <html><head><title>Discharge Summary - ${patient.name}</title></head>
+      <body style="font-family: Arial, sans-serif; padding: 30px;">
+        <div style="text-align:center; border-bottom:2px solid #333; padding-bottom:10px; margin-bottom:20px;">
+          <h2 style="margin:0;">${hospitalInfo.name}</h2>
+          <p style="margin:2px 0; font-size:13px;">${hospitalInfo.address}</p>
+          <p style="margin:2px 0; font-size:13px;">${hospitalInfo.doctorName}</p>
+        </div>
+        <p><b>Patient:</b> ${patient.name} | <b>UHID:</b> ${patient.uhid} | <b>Age/Sex:</b> ${patient.age}/${patient.gender}</p>
+        <p><b>Admission:</b> ${admissionStr} &nbsp;|&nbsp; <b>Discharge:</b> ${dischargeStr}</p>
+        <p><b>Discharge Outcome:</b> ${patient.dischargeOutcome || '-'}</p>
+        <hr/>
+        <h3>Discharge Summary</h3>
+        <div style="white-space:pre-wrap; font-size:14px; line-height:1.6;">${(patient.dischargeSummary || 'Not generated').replace(/</g,'&lt;')}</div>
+        <h3>Discharge Medications</h3>
+        <table style="width:100%; border-collapse:collapse;">
+          <thead><tr style="background:#eee; text-align:left;"><th style="padding:8px;">Medicine</th><th style="padding:8px;">Dosage</th><th style="padding:8px;">Duration</th></tr></thead>
+          <tbody>${medsHtml || '<tr><td colspan="3" style="padding:8px;">None</td></tr>'}</tbody>
+        </table>
+        <br/><br/>
+     
+     <div style="display:flex; justify-content:space-between; align-items:flex-end; margin-top:30px;">
+ 
+ <div style="display:flex; justify-content:space-between; align-items:flex-end; margin-top:30px;">
+  <p style="margin:0;">Nurse's Signature: __________________</p>
+  <div style="text-align:center;">
+    ${hospitalInfo.doctorSign ? `<img src="${hospitalInfo.doctorSign}" alt="Sign" style="height:45px; object-fit:contain; display:block; margin:0 auto;" />` : `<p style="margin:0;">__________________</p>`}
+    <p style="margin:4px 0 0 0; font-weight:bold;">${hospitalInfo.doctorName || "Doctor's Signature"}</p>
+  </div>
+</div>
+
+      </body></html>
+    `);
+    printWindow.document.close();
+    printWindow.print();
+  };
+
   const IPD_DEFAULT_VITALS = { bp: '120/80', pulse: '78', temp: '98.6', spo2: '98' };
+
 
   const handleIpdVitalInputChange = (patientId, field, value) => {
     setIpdVitalInputs(prev => ({
@@ -1867,21 +2095,32 @@ Based on the complete patient summary above (symptoms, manual history, negative 
   const saveIpdDayVitals = (patient) => {
     const activeDay = getActiveIpdDay(patient);
     if (!activeDay) return;
-    const input = ipdVitalInputs[patient.id] || {};
-    const finalVitals = {
-      bp: input.bp && input.bp.trim() ? input.bp.trim() : IPD_DEFAULT_VITALS.bp,
-      pulse: input.pulse && input.pulse.trim() ? input.pulse.trim() : IPD_DEFAULT_VITALS.pulse,
-      temp: input.temp && input.temp.trim() ? input.temp.trim() : IPD_DEFAULT_VITALS.temp,
-      spo2: input.spo2 && input.spo2.trim() ? input.spo2.trim() : IPD_DEFAULT_VITALS.spo2,
+    const refs = ipdVitalRefs.current[patient.id] || {};
+    const defaultTime = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+
+    const timeVal = refs.time?.value?.trim();
+    const bpVal = refs.bp?.value?.trim();
+    const pulseVal = refs.pulse?.value?.trim();
+    const tempVal = refs.temp?.value?.trim();
+    const spo2Val = refs.spo2?.value?.trim();
+
+    const newReading = {
+      id: Date.now() + Math.random(),
+      time: timeVal || defaultTime,
+      bp: bpVal || IPD_DEFAULT_VITALS.bp,
+      pulse: pulseVal || IPD_DEFAULT_VITALS.pulse,
+      temp: tempVal || IPD_DEFAULT_VITALS.temp,
+      spo2: spo2Val || IPD_DEFAULT_VITALS.spo2,
     };
+
     const updatedDays = (patient.dailyOrders || []).map(d =>
-        d.id === activeDay.id ? { ...d, vitals: finalVitals } : d
+        d.id === activeDay.id ? { ...d, vitalsLog: [...(d.vitalsLog || []), newReading] } : d
     );
     saveIpdDailyOrders(patient, updatedDays);
-    setIpdVitalInputs(prev => {
-      const next = { ...prev };
-      delete next[patient.id];
-      return next;
+
+    // Input fields khali kari do (uncontrolled, DOM direct clear)
+    ['time', 'bp', 'pulse', 'temp', 'spo2'].forEach(f => {
+      if (refs[f]) refs[f].value = '';
     });
   };
 
@@ -1927,6 +2166,7 @@ Based on the complete patient summary above (symptoms, manual history, negative 
     // (AI-suggested + manually added meds, non-pharm advice, and procedures), but only if
     // this patient doesn't already have day-wise orders (avoid overwriting an existing IPD stay).
     let dailyOrdersPatch = activePatient.dailyOrders || [];
+    const admittedAtPatch = (nextStatus === 'IPD' && !activePatient.admittedAt) ? new Date().toISOString() : activePatient.admittedAt;
     if (nextStatus === 'IPD' && dailyOrdersPatch.length === 0 && (prescriptions.length > 0 || nonPharmManagement.length > 0 || followUpAdvice.trim())) {
       const day1Meds = prescriptions.map(m => ({
         id: m.id || Date.now() + Math.random(),
@@ -1946,7 +2186,7 @@ Based on the complete patient summary above (symptoms, manual history, negative 
         id: Date.now() + Math.random(),
         text: item.text,
       }));
-      dailyOrdersPatch = [{ id: `day-${Date.now()}`, label: 'Day 1', meds: day1Meds, advice: day1Advice, procedures: day1Procedures }];
+      dailyOrdersPatch = [{ id: `day-${Date.now()}`, label: 'Day 1', date: new Date().toLocaleDateString('en-GB'), meds: day1Meds, advice: day1Advice, procedures: day1Procedures, vitalsLog: [] }];
     }
 
     setPatients(patients.map(p => {
@@ -1959,6 +2199,7 @@ Based on the complete patient summary above (symptoms, manual history, negative 
           nonPharmManagement: nonPharmManagement,
           followUpAdvice: followUpAdvice,
           dailyOrders: dailyOrdersPatch,
+          admittedAt: admittedAtPatch,
         };
       }
       return p;
@@ -1970,7 +2211,9 @@ Based on the complete patient summary above (symptoms, manual history, negative 
       daily_orders: dailyOrdersPatch,
       non_pharm_management: nonPharmManagement,
       follow_up_advice: followUpAdvice,
+      admitted_at: admittedAtPatch,
     });
+
     setSelectedPatientId(null);
     setActiveTab(nextStatus === 'IPD' ? 'ipd' : 'pharmacy');
 
@@ -2067,6 +2310,8 @@ Based on the complete patient summary above (symptoms, manual history, negative 
             </div>
             
             <p style="text-align: left;"><b>Patient:</b> ${patient.name}&nbsp;&nbsp;|&nbsp;&nbsp;<b>UHID:</b> ${patient.uhid}&nbsp;&nbsp;|&nbsp;&nbsp;<b>Age/Sex:</b> ${patient.age} / ${patient.gender}</p>
+ <p style="margin:4px 0; font-size:13px;"><b>Date:</b> ${new Date().toLocaleDateString('en-GB')}</p>
+
 <p style="margin:2px 0; font-size:13px;">${patient.address || ''}${patient.contact ? ' &nbsp;|&nbsp; Contact: ' + patient.contact : ''}${patient.insuranceId ? ' &nbsp;|&nbsp; Insurance ID: ' + patient.insuranceId : ''}</p>
             <hr style="border: 0; border-top: 1px solid #eee; margin: 15px 0;">
             
@@ -3724,7 +3969,7 @@ ${patient.followUpAdvice ? `
                                                   : 'bg-white text-gray-600 border-gray-300 hover:border-red-300'
                                           }`}
                                       >
-                                        {day.label}
+                                        {day.label}{day.date ? ` (${day.date})` : ''}
                                       </button>
                                   ))}
                                   <button
@@ -3743,29 +3988,36 @@ ${patient.followUpAdvice ? `
 
                                   return (
                                       <div className="border rounded-lg p-3 bg-gray-50 space-y-4">
-                                        {/* Vitals for this day */}
+
+                                        {/* Vitals for this day — Multiple readings with time (uncontrolled, typing-safe) */}
                                         <div>
                                           <h5 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Vitals — {activeDay.label}</h5>
-                                          {activeDay.vitals ? (
-                                              <div className="grid grid-cols-4 gap-2 mb-2 bg-white border rounded-lg p-2">
-                                                <div><p className="text-[10px] text-gray-400">BP</p><p className="text-sm font-semibold">{activeDay.vitals.bp}</p></div>
-                                                <div><p className="text-[10px] text-gray-400">Pulse</p><p className="text-sm font-semibold">{activeDay.vitals.pulse}</p></div>
-                                                <div><p className="text-[10px] text-gray-400">Temp</p><p className="text-sm font-semibold">{activeDay.vitals.temp}</p></div>
-                                                <div><p className="text-[10px] text-gray-400">SpO2</p><p className="text-sm font-semibold">{activeDay.vitals.spo2}</p></div>
-                                              </div>
+                                          {(activeDay.vitalsLog || []).length === 0 ? (
+                                              <p className="text-sm text-gray-400 italic mb-2">No readings recorded yet.</p>
                                           ) : (
-                                              <p className="text-sm text-gray-400 italic mb-2"> recorded — by dr/nurse.</p>
+                                              <div className="space-y-1.5 mb-2">
+                                                {activeDay.vitalsLog.map(v => (
+                                                    <div key={v.id} className="grid grid-cols-5 gap-2 bg-white border rounded-lg p-2 items-center">
+                                                      <div><p className="text-[10px] text-gray-400">Time</p><p className="text-sm font-bold text-red-600">{v.time}</p></div>
+                                                      <div><p className="text-[10px] text-gray-400">BP</p><p className="text-sm font-semibold">{v.bp}</p></div>
+                                                      <div><p className="text-[10px] text-gray-400">Pulse</p><p className="text-sm font-semibold">{v.pulse}</p></div>
+                                                      <div><p className="text-[10px] text-gray-400">Temp</p><p className="text-sm font-semibold">{v.temp}</p></div>
+                                                      <div><p className="text-[10px] text-gray-400">SpO2</p><p className="text-sm font-semibold">{v.spo2}</p></div>
+                                                    </div>
+                                                ))}
+                                              </div>
                                           )}
-                                          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-                                            <input type="text" placeholder="BP (120/80)" value={ipdVitalInputs[p.id]?.bp || ''} onChange={(e) => handleIpdVitalInputChange(p.id, 'bp', e.target.value)} className="border rounded-lg px-2 py-2 text-sm focus:ring-2 focus:ring-red-400 outline-none" />
-                                            <input type="text" placeholder="Pulse (78)" value={ipdVitalInputs[p.id]?.pulse || ''} onChange={(e) => handleIpdVitalInputChange(p.id, 'pulse', e.target.value)} className="border rounded-lg px-2 py-2 text-sm focus:ring-2 focus:ring-red-400 outline-none" />
-                                            <input type="text" placeholder="Temp (98.6)" value={ipdVitalInputs[p.id]?.temp || ''} onChange={(e) => handleIpdVitalInputChange(p.id, 'temp', e.target.value)} className="border rounded-lg px-2 py-2 text-sm focus:ring-2 focus:ring-red-400 outline-none" />
-                                            <input type="text" placeholder="SpO2 (98)" value={ipdVitalInputs[p.id]?.spo2 || ''} onChange={(e) => handleIpdVitalInputChange(p.id, 'spo2', e.target.value)} className="border rounded-lg px-2 py-2 text-sm focus:ring-2 focus:ring-red-400 outline-none" />
-                                            <button onClick={() => saveIpdDayVitals(p)} className="bg-red-600 text-white px-3 py-2 rounded-lg text-sm font-medium hover:bg-red-700">Save Vitals</button>
+                                          <div className="grid grid-cols-2 sm:grid-cols-6 gap-2">
+                                            <input type="text" placeholder="Time (08:00 AM)" defaultValue="" ref={(el) => setIpdVitalRef(p.id, 'time', el)} className="border rounded-lg px-2 py-2 text-sm focus:ring-2 focus:ring-red-400 outline-none" />
+                                            <input type="text" placeholder="BP (120/80)" defaultValue="" ref={(el) => setIpdVitalRef(p.id, 'bp', el)} className="border rounded-lg px-2 py-2 text-sm focus:ring-2 focus:ring-red-400 outline-none" />
+                                            <input type="text" placeholder="Pulse (78)" defaultValue="" ref={(el) => setIpdVitalRef(p.id, 'pulse', el)} className="border rounded-lg px-2 py-2 text-sm focus:ring-2 focus:ring-red-400 outline-none" />
+                                            <input type="text" placeholder="Temp (98.6)" defaultValue="" ref={(el) => setIpdVitalRef(p.id, 'temp', el)} className="border rounded-lg px-2 py-2 text-sm focus:ring-2 focus:ring-red-400 outline-none" />
+                                            <input type="text" placeholder="SpO2 (98)" defaultValue="" ref={(el) => setIpdVitalRef(p.id, 'spo2', el)} className="border rounded-lg px-2 py-2 text-sm focus:ring-2 focus:ring-red-400 outline-none" />
+                                            <button onClick={() => saveIpdDayVitals(p)} className="bg-red-600 text-white px-3 py-2 rounded-lg text-sm font-medium hover:bg-red-700">+ Add Reading</button>
                                           </div>
                                         </div>
-
                                         {/* Medications for this day */}
+
                                         <div>
                                           <h5 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Medications — {activeDay.label}</h5>
                                           {activeDay.meds.length === 0 ? (
@@ -3773,13 +4025,26 @@ ${patient.followUpAdvice ? `
                                           ) : (
                                               <ul className="divide-y border rounded-lg bg-white mb-2">
                                                 {activeDay.meds.map(m => (
-                                                    <li key={m.id} className="flex items-center justify-between px-3 py-2">
-                                                      <span className="text-sm text-gray-800">
-                                                        <span className="font-medium">{m.name}</span> — {m.dosage}, {m.duration}
-                                                      </span>
+                                                    <li key={m.id} className={`flex items-center justify-between px-3 py-2 ${m.given ? 'bg-green-50' : ''}`}>
+                                                      <label className="flex items-center gap-2 flex-1 cursor-pointer">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={!!m.given}
+                                                            onChange={() => toggleIpdMedGiven(p, activeDay.id, m.id)}
+                                                            className="w-4 h-4 text-green-600 rounded focus:ring-green-500 shrink-0"
+                                                        />
+                                                        <span className={`text-sm ${m.given ? 'text-gray-400 line-through' : 'text-gray-800'}`}>
+                                                          <span className="font-medium">{m.name}</span> — {m.dosage}, {m.duration}
+                                                        </span>
+                                                        {m.given ? (
+                                                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 shrink-0">Given</span>
+                                                        ) : (
+                                                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-yellow-100 text-yellow-700 shrink-0">Pending</span>
+                                                        )}
+                                                      </label>
                                                       <button
                                                           onClick={() => removeIpdMedication(p, activeDay.id, m.id)}
-                                                          className="text-red-400 hover:text-red-600 p-1"
+                                                          className="text-red-400 hover:text-red-600 p-1 shrink-0"
                                                       >
                                                         <Trash2 size={14}/>
                                                       </button>
@@ -3787,6 +4052,7 @@ ${patient.followUpAdvice ? `
                                                 ))}
                                               </ul>
                                           )}
+
                                           <div className="grid grid-cols-1 sm:grid-cols-12 gap-2">
                                             <div className="sm:col-span-5">
                                               <input
@@ -3992,10 +4258,7 @@ ${patient.followUpAdvice ? `
 
                                 <button
                                     disabled={!ipdPrinted[p.id]}
-                                    onClick={() => {
-                                      setPatients(patients.map(pt => pt.id === p.id ? { ...pt, status: 'Pharmacy' } : pt));
-                                      updatePatientInDb(p.dbId, { status: 'Pharmacy' });
-                                    }}
+                                    onClick={() => openDischargeModal(p)}
                                     className={`px-4 py-2 rounded-lg text-sm font-semibold text-white ${ipdPrinted[p.id] ? 'bg-purple-600 hover:bg-purple-700' : 'bg-gray-300 cursor-not-allowed'}`}
                                 >
                                   Discharge → Send to Pharmacy
@@ -4006,6 +4269,150 @@ ${patient.followUpAdvice ? `
                     )}
                   </div>
               )}
+              {/* --- DISCHARGE MODAL --- */}
+              {showDischargeModal && dischargePatient && (
+                  <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-2xl max-w-2xl w-full shadow-2xl flex flex-col max-h-[90vh]">
+                      <div className="p-5 border-b flex justify-between items-center">
+                        <div>
+                          <h3 className="text-lg font-bold text-gray-900">Discharge — {dischargePatient.name}</h3>
+                          <p className="text-xs text-gray-500">{dischargePatient.uhid} • Step {dischargeStep} of 3</p>
+                        </div>
+                        <button onClick={() => setShowDischargeModal(false)} className="text-gray-400 hover:text-gray-600 text-xl">&times;</button>
+                      </div>
+
+                      <div className="flex-1 overflow-y-auto p-5 space-y-4">
+
+                        {dischargeStep === 1 && (
+                            <>
+                              <h4 className="text-sm font-bold text-gray-700 mb-2">Discharge Outcome</h4>
+                              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                                {['Cured / Recovered', 'Relieved / Improved', 'LAMA', 'DAMA', 'Referred', 'Absconded', 'Death / Expired'].map(opt => (
+                                    <button
+                                        key={opt}
+                                        onClick={() => setDischargeOutcome(opt)}
+                                        className={`px-3 py-2.5 rounded-lg text-sm font-medium border text-left ${
+                                            dischargeOutcome === opt
+                                                ? 'bg-purple-600 text-white border-purple-600'
+                                                : 'bg-white text-gray-700 border-gray-300 hover:border-purple-300'
+                                        }`}
+                                    >
+                                      {opt}
+                                    </button>
+                                ))}
+                              </div>
+
+                              {['LAMA', 'DAMA', 'Referred', 'Death / Expired'].includes(dischargeOutcome) && (
+                                  <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mt-4 space-y-3">
+                                    <h5 className="text-xs font-bold text-amber-700 uppercase tracking-wider">Consent / Notification Details</h5>
+                                    <div className="grid grid-cols-2 gap-3">
+                                      <input type="text" placeholder="Consent Giver Name" value={consentGiverName} onChange={(e) => setConsentGiverName(e.target.value)} className="border rounded-lg px-3 py-2 text-sm" />
+                                      <input type="text" placeholder="Relation with Patient" value={consentRelation} onChange={(e) => setConsentRelation(e.target.value)} className="border rounded-lg px-3 py-2 text-sm" />
+                                      <input type="text" placeholder="Mobile Number" value={consentMobile} onChange={(e) => setConsentMobile(e.target.value)} className="border rounded-lg px-3 py-2 text-sm" />
+                                      <input type="text" placeholder="Reason / Remarks" value={consentReason} onChange={(e) => setConsentReason(e.target.value)} className="border rounded-lg px-3 py-2 text-sm" />
+                                    </div>
+                                  </div>
+                              )}
+                            </>
+                        )}
+
+                        {dischargeStep === 2 && (
+                            <>
+                              {dischargeSummaryLoading ? (
+                                  <div className="flex flex-col items-center justify-center text-purple-600 py-10 space-y-3">
+                                    <Activity size={32} className="animate-spin"/>
+                                    <p className="text-sm font-medium">Generating discharge summary...</p>
+                                  </div>
+                              ) : dischargeSummaryError ? (
+                                  <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded-lg flex items-start gap-3">
+                                    <AlertTriangle className="shrink-0 mt-0.5" size={18}/>
+                                    <p className="text-sm">{dischargeSummaryError}</p>
+                                  </div>
+                              ) : (
+                                  <>
+                                    <div className="flex justify-between items-center mb-2">
+                                      <h4 className="text-sm font-bold text-gray-700">AI-Generated Discharge Summary (editable)</h4>
+                                      <button onClick={generateDischargeSummary} className="text-xs text-purple-600 font-semibold flex items-center gap-1 hover:text-purple-800">
+                                        <Sparkles size={12}/> Regenerate
+                                      </button>
+                                    </div>
+                                    <textarea
+                                        value={dischargeSummary}
+                                        onChange={(e) => setDischargeSummary(e.target.value)}
+                                        rows={16}
+                                        className="w-full border border-gray-300 rounded-lg p-3 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-purple-400"
+                                    />
+                                  </>
+                              )}
+                            </>
+                        )}
+
+                        {dischargeStep === 3 && (
+                            <div className="space-y-4">
+                              <div className="bg-gray-50 border rounded-lg p-4">
+                                <p className="text-sm"><b>Outcome:</b> {dischargeOutcome}</p>
+                                {['LAMA', 'DAMA', 'Referred', 'Death / Expired'].includes(dischargeOutcome) && (
+                                    <p className="text-sm mt-1"><b>Consent:</b> {consentGiverName} ({consentRelation}), {consentMobile}</p>
+                                )}
+                                <p className="text-sm mt-1"><b>Summary:</b> Ready ({dischargeSummary.length} chars)</p>
+                              </div>
+                              <p className="text-xs text-gray-500">
+                                Confirming will move this patient to Pharmacy for final medicine dispensing.
+                              </p>
+                            </div>
+                        )}
+                      </div>
+
+                      <div className="p-4 border-t flex justify-between items-center bg-gray-50 rounded-b-2xl">
+                        <button
+                            onClick={() => dischargeStep === 1 ? setShowDischargeModal(false) : setDischargeStep(dischargeStep - 1)}
+                            className="bg-white border text-gray-600 px-5 py-2.5 rounded-lg text-sm font-semibold hover:bg-gray-100"
+                        >
+                          {dischargeStep === 1 ? 'Cancel' : '← Back'}
+                        </button>
+
+                        {dischargeStep === 1 && (
+                            <button
+                                disabled={!dischargeOutcome || (['LAMA', 'DAMA', 'Referred', 'Death / Expired'].includes(dischargeOutcome) && (!consentGiverName.trim() || !consentMobile.trim()))}
+                                onClick={() => { setDischargeStep(2); generateDischargeSummary(); }}
+                                className="bg-purple-600 text-white px-6 py-2.5 rounded-lg text-sm font-bold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-purple-700"
+                            >
+                              Next: Generate Summary →
+                            </button>
+                        )}
+
+                        {dischargeStep === 2 && (
+                            <button
+                                disabled={!dischargeSummary.trim() || dischargeSummaryLoading}
+                                onClick={() => setDischargeStep(3)}
+                                className="bg-purple-600 text-white px-6 py-2.5 rounded-lg text-sm font-bold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-purple-700"
+                            >
+                              Next: Confirm →
+                            </button>
+                        )}
+
+                        {dischargeStep === 3 && (
+                            <div className="flex gap-2">
+                              <button
+                                  onClick={() => printDischargeSummary({ ...dischargePatient, dischargeOutcome, dischargeSummary, dischargedAt: dischargePatient.dischargedAt || new Date().toISOString() })}
+                                  className="bg-blue-600 text-white px-5 py-2.5 rounded-lg text-sm font-bold hover:bg-blue-700"
+                              >
+                                🖨️ Print Discharge Paper
+                              </button>
+                              <button
+                                  onClick={confirmDischargeAndSendToPharmacy}
+                                  className="bg-green-600 text-white px-6 py-2.5 rounded-lg text-sm font-bold hover:bg-green-700 flex items-center gap-2"
+                              >
+                                <CheckCircle2 size={16}/> Confirm Discharge & Send to Pharmacy
+                              </button>
+                            </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+              )}
+
+              {/* --- LAB TAB (Real) --- */}
 
               {/* --- LAB TAB (Real) --- */}
 
@@ -4323,22 +4730,33 @@ ${patient.followUpAdvice ? `
                                     )}
                                   </ul>
                                 </div>
+
                                 <div className="p-4 bg-white border-t flex justify-end gap-2">
-                                  <div className="p-4 bg-white border-t flex justify-end gap-2">
-                                    <button
-                                        onClick={() => printPrescription(p)}
-                                        className="bg-gray-700 text-white px-4 py-2.5 rounded-lg text-sm font-semibold flex items-center gap-2"
-                                    >
-                                      🖨️ Print
-                                    </button>
-                                    <button
-                                        onClick={() => dispenseMedication(p.id)}
-                                        className="bg-purple-600 text-white px-5 py-2.5 rounded-lg text-sm font-semibold flex items-center gap-2"
-                                    >
-                                      <Check size={18}/> Dispense & Complete
-                                    </button>
-                                  </div>
+                                  {p.admittedAt ? (
+                                      // Aa patient IPD thi aavelu che — doctor e already discharge summary confirm kari didhi hase
+                                      <button
+                                          onClick={() => printDischargeSummary(p)}
+                                          className="bg-gray-700 text-white px-4 py-2.5 rounded-lg text-sm font-semibold flex items-center gap-2"
+                                      >
+                                        🖨️ Print Discharge Summary
+                                      </button>
+                                  ) : (
+                                      // Normal OPD patient — sāme che pahela ni jem
+                                      <button
+                                          onClick={() => printPrescription(p)}
+                                          className="bg-gray-700 text-white px-4 py-2.5 rounded-lg text-sm font-semibold flex items-center gap-2"
+                                      >
+                                        🖨️ Print
+                                      </button>
+                                  )}
+                                  <button
+                                      onClick={() => dispenseMedication(p.id)}
+                                      className="bg-purple-600 text-white px-5 py-2.5 rounded-lg text-sm font-semibold flex items-center gap-2"
+                                  >
+                                    <Check size={18}/> Dispense & Complete
+                                  </button>
                                 </div>
+
                               </div>
                           ))
                       )}
@@ -4394,6 +4812,44 @@ ${patient.followUpAdvice ? `
                             className="w-full border rounded-lg p-2.5 text-sm mt-1"
                         />
                       </div>
+
+                      <div>
+                        <label className="text-xs font-semibold text-gray-600 block mb-1">
+                          Doctor Digital Signature
+                        </label>
+                        <input
+                            type="file"
+                            accept="image/*"
+                            onChange={(e) => {
+                              const file = e.target.files[0];
+                              if (file) {
+                                const reader = new FileReader();
+                                reader.onloadend = () => {
+                                  updateHospitalInfo('doctorSign', reader.result);
+                                };
+                                reader.readAsDataURL(file);
+                              }
+                            }}
+                            className="w-full border rounded-lg p-2 text-sm bg-white"
+                        />
+                        {hospitalInfo.doctorSign && (
+                            <div className="mt-2 flex items-center gap-3">
+                              <img
+                                  src={hospitalInfo.doctorSign}
+                                  alt="Doctor Sign Preview"
+                                  className="h-10 border rounded p-1 bg-white object-contain"
+                              />
+                              <button
+                                  type="button"
+                                  onClick={() => updateHospitalInfo('doctorSign', '')}
+                                  className="text-xs text-red-600 font-semibold hover:underline"
+                              >
+                                Remove Sign
+                              </button>
+                            </div>
+                        )}
+                      </div>
+
                       <p className="text-xs text-gray-400">This information appears on all printed prescriptions and bills.</p>
                     </div>
                   </div>
