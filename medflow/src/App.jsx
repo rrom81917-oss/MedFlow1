@@ -475,6 +475,10 @@ const ROLE_TABS = {
 };
 export default function MedFlowApp() {
 
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [currentRole, setCurrentRole] = useState(null); // { role, fullName, hospitalId, hospitalName, tabs }
+  const [authLoading, setAuthLoading] = useState(true);
+
 // Exam & Investigation Suggestion State
   const [aiExamLoading, setAiExamLoading] = useState(false);
   const [aiExamError, setAiExamError] = useState('');
@@ -492,9 +496,44 @@ export default function MedFlowApp() {
     email: "abcd@gmail.com",
     doctorSign: "/sign.png",
   });
+
   const updateHospitalInfo = (field, value) => {
     setHospitalInfo(prev => ({ ...prev, [field]: value }));
   };
+
+  // Hospital settings ne Supabase mathi load karo (page load / hospital badle tyare)
+  useEffect(() => {
+    if (!currentRole?.hospitalId) return;
+    supabase.from('hospital_settings').select('*') .eq('hospital_id', currentRole.hospitalId).maybeSingle()
+        .then(({ data }) => {
+          if (data) {
+            setHospitalInfo({
+              name: data.name || '',
+              address: data.address || '',
+              doctorName: data.doctor_name || '',
+              contact: data.contact || '',
+              email: data.email || '',
+              doctorSign: data.doctor_sign || '',
+            });
+          }
+        });
+  }, [currentRole?.hospitalId]);
+
+  const saveHospitalSettings = async () => {
+    if (!currentRole?.hospitalId) { alert('Hospital not identified yet.'); return; }
+    const { error } = await supabase.from('hospital_settings').upsert({
+      hospital_id: currentRole.hospitalId,
+      name: hospitalInfo.name,
+      address: hospitalInfo.address,
+      doctor_name: hospitalInfo.doctorName,
+      contact: hospitalInfo.contact,
+      email: hospitalInfo.email,
+      doctor_sign: hospitalInfo.doctorSign,
+    });
+    if (error) alert('Could not save settings: ' + error.message);
+    else alert('Settings saved successfully.');
+  };
+
   const runExamSuggestionEngine = async () => {
     if (selectedSymptoms.length === 0 && !manualHistory) return;
     setAiExamLoading(true);
@@ -946,9 +985,7 @@ You MUST return your response as a valid JSON object matching exactly this schem
     recognition.start();
   };
 
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [currentRole, setCurrentRole] = useState(null); // { role, fullName, hospitalId, hospitalName, tabs }
-  const [authLoading, setAuthLoading] = useState(true);
+
   const loadProfile = async (userId) => {
     const { data, error } = await supabase
         .from('profiles')
@@ -1002,6 +1039,7 @@ You MUST return your response as a valid JSON object matching exactly this schem
     savedNegativeHistory: row.saved_negative_history, savedInvestigations: row.saved_investigations,
     savedExamValues: row.saved_exam_values, savedAiResult: row.saved_ai_result,
     savedSelectedDdx: row.saved_selected_ddx, investigationsOrdered: row.investigations_ordered,
+    savedManualHistory: row.saved_manual_history || '',
     labStatus: row.lab_status, labResults: row.lab_results,
     radiologyDone: row.radiology_done, diagLabDone: row.diag_lab_done,
     completedTests: row.completed_tests || [],
@@ -1013,6 +1051,7 @@ You MUST return your response as a valid JSON object matching exactly this schem
     dischargeOutcome: row.discharge_outcome || '',
     dischargeConsent: row.discharge_consent || {},
     dischargeSummary: row.discharge_summary || '',
+    visitHistory: row.visit_history || [],
   });
 
   const fetchPatients = async () => {
@@ -1045,12 +1084,14 @@ You MUST return your response as a valid JSON object matching exactly this schem
 
   // Reception Modal State
   const [showAddPatientModal, setShowAddPatientModal] = useState(false);
+  const [isSubmittingPatient, setIsSubmittingPatient] = useState(false);
   const [newPatientName, setNewPatientName] = useState('');
   const [newPatientAge, setNewPatientAge] = useState('');
   const [newPatientGender, setNewPatientGender] = useState('male');
   const [newPatientTriage, setNewPatientTriage] = useState('GREEN');
   const [newPatientOccupation, setNewPatientOccupation] = useState('');
   const [followUpUhid, setFollowUpUhid] = useState("");
+  const [followUpPreview, setFollowUpPreview] = useState(null); // { isDischarged, lastVisitDate, diagnoses, dischargeOutcome, dischargeSummary }
   const [newPatientAddress, setNewPatientAddress] = useState('');
   const [newPatientInsuranceId, setNewPatientInsuranceId] = useState('');
   const [newPatientContact, setNewPatientContact] = useState('');
@@ -1175,7 +1216,7 @@ You MUST return your response as a valid JSON object matching exactly this schem
 
   const activePatient = patients.find(p => p.id === selectedPatientId);
   useEffect(() => {
-    if (activePatient?.savedSymptoms) {
+    if (activePatient?.savedSymptoms && activePatient.savedSymptoms.length > 0) {
       setSelectedSymptoms(activePatient.savedSymptoms);
       setSelectedNegativeHistory(activePatient.savedNegativeHistory || []);
       const restoredAnswers = {};
@@ -1219,8 +1260,9 @@ You MUST return your response as a valid JSON object matching exactly this schem
 
   // --- Reception Actions ---
 
-  const searchFollowUpPatient = (query) => {
+  const searchFollowUpPatient = async (query) => {
     if (!query.trim()) {
+      setFollowUpPreview(null);
       setNewPatientName('');
       setNewPatientAge('');
       setNewPatientGender('male');
@@ -1231,10 +1273,44 @@ You MUST return your response as a valid JSON object matching exactly this schem
       return;
     }
     const q = query.trim().toLowerCase();
-    const found = patients.find(p =>
+
+    // Pehla current active list (Nursing/Doctor/IPD/Pharmacy) ma shodho
+    let found = patients.find(p =>
         p.uhid.toLowerCase() === q || p.name.toLowerCase().includes(q)
     );
+
+    // Active list ma na madyu to discharged patients samet DIRECT Supabase mathi shodho
+    if (!found && currentRole?.hospitalId) {
+      const { data } = await supabase
+          .from('patients')
+          .select('*')
+          .eq('hospital_id', currentRole.hospitalId)
+          .or(`uhid.ilike.%${query.trim()}%,name.ilike.%${query.trim()}%`)
+          .order('created_at', { ascending: false })
+          .limit(1);
+      if (data && data.length > 0) {
+        found = mapDbPatientToUi(data[0]);
+      }
+    }
+
     if (found) {
+      const isDischarged = found.status === 'Discharged';
+      const lastVisit = (found.visitHistory && found.visitHistory.length > 0)
+          ? found.visitHistory[found.visitHistory.length - 1]
+          : null;
+
+      setFollowUpPreview({
+        isDischarged,
+        lastVisitDate: found.dischargedAt
+            ? new Date(found.dischargedAt).toLocaleDateString('en-GB')
+            : (lastVisit?.date ? new Date(lastVisit.date).toLocaleDateString('en-GB') : null),
+        diagnoses: (found.diagnoses && found.diagnoses.length > 0)
+            ? found.diagnoses.join(', ')
+            : ((lastVisit?.diagnoses && lastVisit.diagnoses.length > 0) ? lastVisit.diagnoses.join(', ') : ''),
+        dischargeOutcome: found.dischargeOutcome || '',
+        dischargeSummary: found.dischargeSummary || lastVisit?.dischargeSummary || '',
+      });
+
       setNewPatientName(found.name);
       setNewPatientAge(found.age.replace('y', ''));
       setNewPatientGender(found.gender);
@@ -1243,6 +1319,7 @@ You MUST return your response as a valid JSON object matching exactly this schem
       setNewPatientInsuranceId(found.insuranceId || '');
       setNewPatientContact(found.contact || '');
     } else {
+      setFollowUpPreview(null);
       setNewPatientName('');
       setNewPatientAge('');
       setNewPatientAddress('');
@@ -1274,110 +1351,155 @@ You MUST return your response as a valid JSON object matching exactly this schem
   const handleAddPatient = async (e) => {
     e.preventDefault();
 
-    // Follow-up: reactivate existing patient by UHID or name
-    if (followUpUhid.trim()) {
-      const q = followUpUhid.trim().toLowerCase();
-      const existing = patients.find(p =>
-          p.uhid.toLowerCase() === q || p.name.toLowerCase().includes(q)
-      );
-      if (existing) {
+    if (isSubmittingPatient) return;
+    setIsSubmittingPatient(true);
 
-        const resetPatch = {
-          status: 'Nursing',
-          complaint: newPatientOccupation || 'Follow-up visit',
-          triage: newPatientTriage,
-          vitals: null,
-          savedSymptoms: [],
-          savedNegativeHistory: [],
-          savedInvestigations: [],
-          savedExamValues: {},
-          savedAiResult: null,
-          savedSelectedDdx: [],
-          investigationsOrdered: [],
-          completedTests: [],
-          labStatus: null,
-          labResults: '',
-          labImages: [],
-          radiologyDone: false,
-          diagLabDone: false,
-          diagnoses: [],
-          prescriptions: [],
-          nonPharmManagement: [],
-          followUpAdvice: '',
-          dailyOrders: [],
-        };
+    try {
+      // Follow-up: reactivate existing patient by UHID or name (discharged patients samet)
+      if (followUpUhid.trim()) {
+        const q = followUpUhid.trim().toLowerCase();
+        let existing = patients.find(p =>
+            p.uhid.toLowerCase() === q || p.name.toLowerCase().includes(q)
+        );
 
-        setPatients(patients.map(p => p.id === existing.id ? { ...p, ...resetPatch } : p));
+        // Active list ma na madyu to discharged patients samet DB mathi direct shodho
+        if (!existing && currentRole?.hospitalId) {
+          const { data } = await supabase
+              .from('patients')
+              .select('*')
+              .eq('hospital_id', currentRole.hospitalId)
+              .or(`uhid.ilike.%${followUpUhid.trim()}%,name.ilike.%${followUpUhid.trim()}%`)
+              .order('created_at', { ascending: false })
+              .limit(1);
+          if (data && data.length > 0) {
+            existing = mapDbPatientToUi(data[0]);
+          }
+        }
 
-        updatePatientInDb(existing.dbId, {
-          status: 'Nursing',
-          complaint: resetPatch.complaint,
-          triage: newPatientTriage,
-          vitals: null,
-          saved_symptoms: [],
-          saved_negative_history: [],
-          saved_investigations: [],
-          saved_exam_values: {},
-          saved_ai_result: null,
-          saved_selected_ddx: [],
-          investigations_ordered: [],
-          completed_tests: [],
-          lab_status: null,
-          lab_results: '',
-          radiology_done: false,
-          diag_lab_done: false,
-          diagnoses: [],
-          prescriptions: [],
-          non_pharm_management: [],
-          follow_up_advice: '',
-          daily_orders: [],
-        });
+        // existing local `patients` state ma hoy k na hoy (discharged hoy to na hoy) e track karo
+        const wasInLocalList = existing ? patients.some(p => p.id === existing.id) : false;
 
-        setFollowUpUhid("");
-        setNewPatientName('');
-        setNewPatientAge('');
-        setNewPatientOccupation('');
-        setNewPatientAddress('');
-        setNewPatientInsuranceId('');
-        setNewPatientContact('');
-        setShowAddPatientModal(false);
-        return;
-      } else {
-        alert("No patient found with this UHID or name.");
-        return;
+        if (existing) {
+
+          const newHistoryEntry = {
+            date: new Date().toISOString(),
+            complaint: existing.complaint || '',
+            diagnoses: existing.diagnoses || [],
+            prescriptions: (existing.prescriptions || []).map(m => ({ name: m.name, dosage: m.dosage, duration: m.duration })),
+            dischargeSummary: existing.dischargeSummary || '',
+            labResults: existing.labResults || '',
+          };
+          const updatedVisitHistory = (existing.diagnoses && existing.diagnoses.length > 0)
+              ? [...(existing.visitHistory || []), newHistoryEntry]
+              : (existing.visitHistory || []);
+
+
+          const resetPatch = {
+            status: 'Nursing',
+            complaint: newPatientOccupation || 'Follow-up visit',
+            triage: newPatientTriage,
+            vitals: null,
+            savedSymptoms: [],
+            savedNegativeHistory: [],
+            savedInvestigations: [],
+            savedExamValues: {},
+            savedAiResult: null,
+            savedSelectedDdx: [],
+            investigationsOrdered: [],
+            completedTests: [],
+            labStatus: null,
+            labResults: '',
+            labImages: [],
+            radiologyDone: false,
+            diagLabDone: false,
+            diagnoses: [],
+            prescriptions: [],
+            nonPharmManagement: [],
+            followUpAdvice: '',
+            dailyOrders: [],
+          };
+
+          if (wasInLocalList) {
+            setPatients(patients.map(p => p.id === existing.id ? { ...p, ...resetPatch } : p));
+          } else {
+            // Discharged patient hato — active list ma pachho ummero
+            setPatients([{ ...existing, ...resetPatch }, ...patients]);
+          }
+
+          updatePatientInDb(existing.dbId, {
+            status: 'Nursing',
+            complaint: resetPatch.complaint,
+            triage: newPatientTriage,
+            vitals: null,
+            saved_symptoms: [],
+            saved_negative_history: [],
+            saved_investigations: [],
+            saved_exam_values: {},
+            saved_ai_result: null,
+            saved_selected_ddx: [],
+            investigations_ordered: [],
+            completed_tests: [],
+            lab_status: null,
+            lab_results: '',
+            radiology_done: false,
+            diag_lab_done: false,
+            diagnoses: [],
+            prescriptions: [],
+            non_pharm_management: [],
+            follow_up_advice: '',
+            daily_orders: [],
+            visit_history: updatedVisitHistory,
+          });
+
+          setFollowUpUhid("");
+          setFollowUpPreview(null);
+          setNewPatientName('');
+          setNewPatientAge('');
+          setNewPatientOccupation('');
+          setNewPatientAddress('');
+          setNewPatientInsuranceId('');
+          setNewPatientContact('');
+          setShowAddPatientModal(false);
+          return;
+        } else {
+          alert("No patient found with this UHID or name.");
+          return;
+        }
       }
+
+      // New patient
+      if (!newPatientName.trim()) return;
+
+      const newUhid = await generateNextUhid();
+
+      const { data: inserted, error } = await supabase.from('patients').insert({
+        hospital_id: currentRole.hospitalId,
+        display_id: `#${Math.floor(Math.random() * 9000 + 10)}`,
+        name: newPatientName, age: `${newPatientAge}y`, gender: newPatientGender,
+        uhid: newUhid,
+        triage: newPatientTriage, status: 'Nursing',
+        occupation: newPatientOccupation || '', address: newPatientAddress || '',
+        insurance_id: newPatientInsuranceId || '', contact: newPatientContact || '',
+        vitals: null,
+      }).select().single();
+
+      if (error) {
+        console.error('Patient registration failed:', error);
+        alert(`Could not register patient: ${error.message}`);
+        return; // stop here — keep the modal open and the form filled so nothing is lost
+      }
+
+      setPatients([mapDbPatientToUi(inserted), ...patients]);
+      setNewPatientName('');
+      setNewPatientAge('');
+      setNewPatientOccupation('');
+      setNewPatientAddress('');
+      setNewPatientInsuranceId('');
+      setNewPatientContact('');
+      setShowAddPatientModal(false);
+    } finally {
+      setIsSubmittingPatient(false);
     }
-
-    // New patient
-    if (!newPatientName.trim()) return;
-
-    const newUhid = await generateNextUhid();
-
-    const { data: inserted, error } = await supabase.from('patients').insert({
-      hospital_id: currentRole.hospitalId,
-      display_id: `#${Math.floor(Math.random() * 9000 + 10)}`,
-      name: newPatientName, age: `${newPatientAge}y`, gender: newPatientGender,
-      uhid: newUhid,
-      triage: newPatientTriage, status: 'Nursing',
-      occupation: newPatientOccupation || '', address: newPatientAddress || '',
-      insurance_id: newPatientInsuranceId || '', contact: newPatientContact || '',
-      vitals: null,
-    }).select().single();
-
-    if (error) {
-      console.error('Patient registration failed:', error);
-      alert(`Could not register patient: ${error.message}`);
-      return; // stop here — keep the modal open and the form filled so nothing is lost
-    }
-
-    setPatients([mapDbPatientToUi(inserted), ...patients]);
-    setNewPatientName('');
-    setNewPatientAge('');
-    setNewPatientOccupation('');
-    setNewPatientAddress('');
-    setNewPatientInsuranceId('');
-    setNewPatientContact('');
-    setShowAddPatientModal(false);
   };
 
   // --- Nursing Station Actions ---
@@ -1570,6 +1692,7 @@ Based on the complete patient summary above (symptoms, manual history, negative 
       savedInvestigations: mergedInvestigations,
       savedExamValues: finalExamValues,
       savedSymptoms: selectedSymptoms,
+      savedManualHistory: manualHistory,
       savedAiResult: aiResult,
       savedSelectedDdx: selectedDdx,
     };
@@ -1582,6 +1705,7 @@ Based on the complete patient summary above (symptoms, manual history, negative 
       saved_investigations: patch.savedInvestigations,
       saved_exam_values: patch.savedExamValues,
       saved_symptoms: patch.savedSymptoms,
+      saved_manual_history: patch.savedManualHistory,
       saved_ai_result: patch.savedAiResult,
       saved_selected_ddx: patch.savedSelectedDdx,
     });
@@ -1599,6 +1723,7 @@ Based on the complete patient summary above (symptoms, manual history, negative 
       savedInvestigations: selectedInvestigations || [],
       savedExamValues: finalExamValues,
       savedSymptoms: selectedSymptoms,
+      savedManualHistory: manualHistory,
       savedAiResult: aiResult,
       savedSelectedDdx: selectedDdx,
     };
@@ -1611,6 +1736,7 @@ Based on the complete patient summary above (symptoms, manual history, negative 
       saved_investigations: patch.savedInvestigations,
       saved_exam_values: patch.savedExamValues,
       saved_symptoms: patch.savedSymptoms,
+      saved_manual_history: patch.savedManualHistory,
       saved_ai_result: patch.savedAiResult,
       saved_selected_ddx: patch.savedSelectedDdx,
     });
@@ -1652,8 +1778,8 @@ Based on the complete patient summary above (symptoms, manual history, negative 
     setNonPharmManagement([]);
     if (activePatient) {
       const finalExamValues = buildFinalExamValues();
-      setPatients(prev => prev.map(p => p.id === activePatient.id ? { ...p, savedExamValues: finalExamValues } : p));
-      updatePatientInDb(activePatient.dbId, { saved_exam_values: finalExamValues });
+      setPatients(prev => prev.map(p => p.id === activePatient.id ? { ...p, savedExamValues: finalExamValues, savedManualHistory: manualHistory } : p));
+      updatePatientInDb(activePatient.dbId, { saved_exam_values: finalExamValues, saved_manual_history: manualHistory });
     }
     setConsultStep('plan');
   };
@@ -1949,6 +2075,13 @@ Based on the complete patient summary above (symptoms, manual history, negative 
 You are a senior consultant preparing a formal Discharge Summary as per NABH/JCI documentation standards, using the same clinical reasoning depth as the diagnosis and treatment plan already generated for this patient.
 
 Patient: ${dischargePatient.name}, ${dischargePatient.age}, ${dischargePatient.gender}, UHID: ${dischargePatient.uhid}.
+Chief Complaint at Admission: ${dischargePatient.complaint || 'Not recorded'}.
+Presenting Symptoms: ${(dischargePatient.savedSymptoms || []).map(s => s.name).join(', ') || 'Not recorded'}.
+Doctor's Manual History (Chief Complaint/HPI): ${dischargePatient.savedManualHistory || 'Not recorded'}.
+Negative History: ${(dischargePatient.savedNegativeHistory || []).join(', ') || 'None confirmed'}.
+Examination Findings on Admission: ${dischargePatient.savedExamValues ? Object.entries(dischargePatient.savedExamValues).map(([k,v]) => `${k}: ${v}`).join(', ') : 'Not documented'}.
+Investigations Ordered: ${(dischargePatient.savedInvestigations || []).join(', ') || 'None'}.
+Lab Results: ${dischargePatient.labResults || 'Not recorded'}.
 Admission Date & Time: ${admissionStr}.
 Discharge Date & Time: ${dischargeStr}.
 Admission Vitals: ${admissionVitalsStr}.
@@ -1960,14 +2093,21 @@ Discharge Outcome: ${dischargeOutcome}.
 ${consentStr}
 
 Generate a complete, professional Discharge Summary including:
-1. Final Diagnosis
-2. Brief Hospital Course (chronological narrative)
-3. Condition at Discharge (based on latest vitals and outcome)
-4. Discharge Medications (clean list with dosage & duration; include tapering schedule if doses changed across days)
-5. Advice & Follow-up Instructions (in both English and Gujarati, clear and patient-friendly)
-6. Red Flag Warning Signs (when to return to hospital immediately)
+1. Chief Complaint & Presenting History (use the chief complaint, symptoms, and manual history given above)
+2. Examination & Investigation Findings (brief summary of what was found on admission)
+3. Final Diagnosis/Provisional Diagnosis
+4. Brief Hospital Course (chronological narrative referencing the day-wise data)
+5. [IF APPLICABLE - FOR OBGY / SURGICAL PATIENTS ONLY]: Include a dedicated subsection/section for "Procedure Summary" (detailing any surgeries performed, intraoperative findings, and procedure course) OR "Delivery Note & Outcome" (detailing the mode of delivery, date/time, fetal outcome, sex of the baby, Apgar scores, and condition of the mother). Skip this section if the patient is neither surgical nor OBGY.
+5. Condition at Discharge (based on latest vitals and outcome)
+7. Advice & Follow-up Instructions (in both English and Gujarati, clear and patient-friendly)
+8. Red Flag Warning Signs (when to return to hospital immediately)
 
-Keep the tone formal, clinical, and concise. Return ONLY the final discharge summary as plain readable text (not JSON, no markdown fences), formatted with clear section headings.
+CRITICAL FORMATTING RULES:
+- Do NOT restate the patient's name, UHID, age, gender, admission date/time, or discharge date/time anywhere in your output — these already appear in a separate header in the printed document, so repeating them creates duplication.
+- Do NOT include a separate itemized medication table with dosages and durations — the full medication table is printed separately as a dedicated table in the document. You may mention medication names briefly in the Hospital Course narrative only if clinically relevant (e.g. "started on IV antibiotics"), but do not list dosage/duration for each drug.
+- Start your response directly with the "Chief Complaint & Presenting History" section heading — no greeting, no patient info block at the top.
+
+Keep the tone formal, clinical, and concise. Return ONLY the discharge summary as plain readable text (not JSON, no markdown fences), formatted with clear section headings.
 `;
 
     try {
@@ -2613,6 +2753,7 @@ ${patient.followUpAdvice ? `
                               <button onClick={() => {
                                 setShowAddPatientModal(false);
                                 setFollowUpUhid('');
+                                setFollowUpPreview(null);
                                 setNewPatientName('');
                                 setNewPatientAge('');
                                 setNewPatientGender('male');
@@ -2641,6 +2782,35 @@ ${patient.followUpAdvice ? `
                                       className="w-full border rounded p-2 text-sm mt-1"
                                   />
                                   <p className="text-xs text-gray-400 mt-1">Leave blank for a new patient</p>
+
+                                  {followUpPreview && (
+                                      <div className={`mt-2 rounded-lg border p-3 text-xs ${followUpPreview.isDischarged ? 'bg-amber-50 border-amber-200' : 'bg-green-50 border-green-200'}`}>
+                                        <div className="flex items-center justify-between mb-1.5">
+                                          <span className={`font-bold uppercase tracking-wide ${followUpPreview.isDischarged ? 'text-amber-700' : 'text-green-700'}`}>
+                                            {followUpPreview.isDischarged ? '⚠ Previously Discharged Patient' : '✓ Active Patient Found'}
+                                          </span>
+                                          {followUpPreview.lastVisitDate && (
+                                              <span className="text-gray-400">{followUpPreview.lastVisitDate}</span>
+                                          )}
+                                        </div>
+                                        {followUpPreview.diagnoses && (
+                                            <p className="text-gray-700 mb-1"><b>Last Diagnosis:</b> {followUpPreview.diagnoses}</p>
+                                        )}
+                                        {followUpPreview.dischargeOutcome && (
+                                            <p className="text-gray-700 mb-1"><b>Discharge Outcome:</b> {followUpPreview.dischargeOutcome}</p>
+                                        )}
+                                        {followUpPreview.dischargeSummary ? (
+                                            <details className="mt-1">
+                                              <summary className="cursor-pointer font-semibold text-amber-700">View Previous Discharge Summary</summary>
+                                              <p className="text-gray-600 whitespace-pre-wrap mt-1 max-h-40 overflow-y-auto">{followUpPreview.dischargeSummary}</p>
+                                            </details>
+                                        ) : (
+                                            followUpPreview.isDischarged && (
+                                                <p className="text-gray-400 italic">No discharge summary recorded for last visit.</p>
+                                            )
+                                        )}
+                                      </div>
+                                  )}
                                 </div>
                                 <label
                                     className="block text-xs font-semibold text-gray-700 mb-1.5 uppercase tracking-wide">Full
@@ -2753,12 +2923,14 @@ ${patient.followUpAdvice ? `
 
                                 <button
                                     type="button"
+
                                     onClick={() => {
                                       setShowAddPatientModal(false);
                                       setFollowUpUhid('');
+                                      setFollowUpPreview(null);
                                       setNewPatientName('');
                                       setNewPatientAge('');
-                                      setNewPatientGender('male');ss
+                                      setNewPatientGender('male');
                                       setNewPatientAddress('');
                                       setNewPatientOccupation('');
                                       setNewPatientInsuranceId('');
@@ -2768,13 +2940,14 @@ ${patient.followUpAdvice ? `
                                 >
                                   Cancel
                                 </button>
-
                                 <button
                                     type="submit"
-                                    className="flex-1 bg-blue-600 text-white px-4 py-2.5 rounded-lg text-sm font-semibold hover:bg-blue-700 transition-colors shadow-sm"
+                                    disabled={isSubmittingPatient}
+                                    className="flex-1 bg-blue-600 text-white px-4 py-2.5 rounded-lg text-sm font-semibold hover:bg-blue-700 transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
-                                  Register Patient
+                                  {isSubmittingPatient ? 'Registering...' : 'Register Patient'}
                                 </button>
+
                               </div>
                             </form>
                           </div>
@@ -3077,10 +3250,45 @@ ${patient.followUpAdvice ? `
 
                                   <div className="flex-1 overflow-y-auto p-5">
 
+                                    {activePatient?.visitHistory?.length > 0 && (
+                                        <div className="mb-6 bg-amber-50 border border-amber-200 rounded-xl p-4">
+                                          <h4 className="text-xs font-bold text-amber-700 uppercase tracking-wider mb-3">
+                                            Previous Visit History ({activePatient.visitHistory.length})
+                                          </h4>
+                                          <div className="space-y-3 max-h-64 overflow-y-auto">
+                                            {activePatient.visitHistory.slice().reverse().map((visit, idx) => (
+                                                <div key={idx} className="bg-white border border-amber-100 rounded-lg p-3">
+                                                  <p className="text-xs text-gray-400 mb-1">
+                                                    {new Date(visit.date).toLocaleDateString('en-GB')}
+                                                  </p>
+                                                  {visit.complaint && (
+                                                      <p className="text-sm text-gray-700"><b>Complaint:</b> {visit.complaint}</p>
+                                                  )}
+                                                  {visit.diagnoses?.length > 0 && (
+                                                      <p className="text-sm text-gray-700 mt-1"><b>Diagnosis:</b> {visit.diagnoses.join(', ')}</p>
+                                                  )}
+                                                  {visit.prescriptions?.length > 0 && (
+                                                      <p className="text-sm text-gray-700 mt-1">
+                                                        <b>Medications:</b> {visit.prescriptions.map(m => `${m.name} (${m.dosage}, ${m.duration})`).join('; ')}
+                                                      </p>
+                                                  )}
+                                                  {visit.dischargeSummary && (
+                                                      <details className="mt-1">
+                                                        <summary className="text-xs text-amber-700 cursor-pointer font-semibold">View Discharge Summary</summary>
+                                                        <p className="text-xs text-gray-600 whitespace-pre-wrap mt-1">{visit.dischargeSummary}</p>
+                                                      </details>
+                                                  )}
+                                                </div>
+                                            ))}
+                                          </div>
+                                        </div>
+                                    )}
+
                                     <div className="mb-6">
                                       <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">
                                         Clinical Images (for AI reference)
                                       </h4>
+
                                       <div className="flex flex-wrap gap-3">
                                         {clinicalImages.map(img => (
                                             <div key={img.id} className="relative w-20 h-20 rounded-lg overflow-hidden border">
@@ -4849,8 +5057,15 @@ ${patient.followUpAdvice ? `
                             </div>
                         )}
                       </div>
-
                       <p className="text-xs text-gray-400">This information appears on all printed prescriptions and bills.</p>
+
+                      <button
+                          onClick={saveHospitalSettings}
+                          className="w-full bg-indigo-600 text-white py-2.5 rounded-lg font-semibold hover:bg-indigo-700"
+                      >
+                        Save Settings
+                      </button>
+
                     </div>
                   </div>
               )}
