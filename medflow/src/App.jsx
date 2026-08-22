@@ -441,6 +441,26 @@ const SYMPTOMS_DB = [
 
 ];
 
+const DEPARTMENTS = [
+  // General / Basic
+  'General Medicine', 'General Surgery', 'Orthopedic', 'Pediatrics',
+  'OBG & Gynec', 'ENT', 'Dermatology', 'Ophthalmology', 'Psychiatry',
+  'Emergency Medicine', 'Anesthesia',
+  // Specialist
+  'Cardiology', 'Neurology', 'Nephrology', 'Gastroenterology',
+  'Pulmonology (Respiratory Medicine)', 'Endocrinology', 'Rheumatology',
+  'Urology', 'Oncology', 'Hematology', 'Infectious Disease',
+  'Plastic Surgery', 'Vascular Surgery', 'Pediatric Surgery',
+  'Nephrology Surgery (Urosurgery)', 'Radiology', 'Physical Medicine & Rehabilitation',
+  // Super-Specialist
+  'Cardiothoracic Surgery (CTVS)', 'Neurosurgery', 'Gastrointestinal Surgery',
+  'Surgical Oncology', 'Medical Oncology', 'Radiation Oncology',
+  'Pediatric Cardiology', 'Pediatric Neurology', 'Interventional Cardiology',
+  'Interventional Radiology', 'Nephrology (Transplant)', 'Liver Transplant / Hepatology',
+  'Endocrine Surgery', 'Neonatology',
+];
+
+
 const CATEGORIES = [
   'All',
   'General Medicine',
@@ -462,17 +482,17 @@ const CATEGORIES = [
   'Psychiatry',
 ];
 
-
 const ROLE_TABS = {
-  admin: ['reception', 'nursing', 'doctor',  'ipd', 'lab', 'review', 'pharmacy', 'settings'],
+  admin: ['reception', 'nursing', 'doctor', 'review', 'ipd', 'ipd_nurse', 'lab', 'pharmacy', 'settings'],
   reception: ['reception'],
   nursing: ['nursing'],
   nurse: ['nursing'],
-  doctor: ['doctor'],
-  ipd: ['ipd'],
+  doctor: ['doctor', 'review', 'ipd'],
+  ipd: ['ipd_nurse'],
   lab: ['lab'],
   pharmacy: ['pharmacy'],
 };
+
 export default function MedFlowApp() {
 
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -495,6 +515,7 @@ export default function MedFlowApp() {
     contact: "+91 93276 81907",
     email: "abcd@gmail.com",
     doctorSign: "/sign.png",
+    wards: [],
   });
 
   const updateHospitalInfo = (field, value) => {
@@ -504,7 +525,7 @@ export default function MedFlowApp() {
   // Hospital settings ne Supabase mathi load karo (page load / hospital badle tyare)
   useEffect(() => {
     if (!currentRole?.hospitalId) return;
-    supabase.from('hospital_settings').select('*') .eq('hospital_id', currentRole.hospitalId).maybeSingle()
+    supabase.from('hospital_settings').select('*').eq('hospital_id', currentRole.hospitalId).single()
         .then(({ data }) => {
           if (data) {
             setHospitalInfo({
@@ -514,6 +535,7 @@ export default function MedFlowApp() {
               contact: data.contact || '',
               email: data.email || '',
               doctorSign: data.doctor_sign || '',
+              wards: data.wards || [],
             });
           }
         });
@@ -529,9 +551,34 @@ export default function MedFlowApp() {
       contact: hospitalInfo.contact,
       email: hospitalInfo.email,
       doctor_sign: hospitalInfo.doctorSign,
+      wards: hospitalInfo.wards,
     });
     if (error) alert('Could not save settings: ' + error.message);
     else alert('Settings saved successfully.');
+  };
+
+  // --- Ward Management Helpers ---
+  const [newWardName, setNewWardName] = useState('');
+  const [newWardCapacity, setNewWardCapacity] = useState('');
+
+  const addWard = () => {
+    const name = newWardName.trim();
+    const capacity = parseInt(newWardCapacity) || 0;
+    if (!name || capacity <= 0) return;
+    setHospitalInfo(prev => ({ ...prev, wards: [...(prev.wards || []), { name, capacity }] }));
+    setNewWardName('');
+    setNewWardCapacity('');
+  };
+
+  const removeWard = (wardName) => {
+    setHospitalInfo(prev => ({ ...prev, wards: (prev.wards || []).filter(w => w.name !== wardName) }));
+  };
+
+  const getWardStats = () => {
+    return (hospitalInfo.wards || []).map(w => {
+      const occupied = patients.filter(p => p.status === 'IPD' && p.ward === w.name).length;
+      return { ...w, occupied, available: Math.max(w.capacity - occupied, 0) };
+    });
   };
 
   const runExamSuggestionEngine = async () => {
@@ -553,6 +600,8 @@ Patient Profile: ${activePatient?.age}, ${activePatient?.gender}, ${activePatien
 Chief Complaint: ${activePatient?.complaint}.
 Selected Clinical Findings & Symptoms: ${symNames || 'None selected'}.
 Doctor's Manual History: ${manualHistory || 'Not provided'}.
+Previous History (Past Illness/Surgery/Medications): ${previousHistory || 'Not provided'}.
+Family History: ${familyHistory || 'Not provided'}.
 
 Suggest:
 1. "negativeHistory" - relevant negative history points a doctor should ask/document to rule out differentials (e.g. "Denies hemoptysis", "No history of trauma").
@@ -1034,12 +1083,16 @@ You MUST return your response as a valid JSON object matching exactly this schem
     id: row.display_id, dbId: row.id, name: row.name, age: row.age, gender: row.gender,
     uhid: row.uhid, triage: row.triage, status: row.status, occupation: row.occupation,
     address: row.address, insuranceId: row.insurance_id, contact: row.contact,
+    department: row.department || 'General Medicine',
     complaint: row.complaint, vitals: row.vitals, diagnoses: row.diagnoses,
     prescriptions: row.prescriptions, savedSymptoms: row.saved_symptoms,
     savedNegativeHistory: row.saved_negative_history, savedInvestigations: row.saved_investigations,
     savedExamValues: row.saved_exam_values, savedAiResult: row.saved_ai_result,
     savedSelectedDdx: row.saved_selected_ddx, investigationsOrdered: row.investigations_ordered,
     savedManualHistory: row.saved_manual_history || '',
+    savedPreviousHistory: row.saved_previous_history || '',
+    savedFamilyHistory: row.saved_family_history || '',
+    referrals: row.referrals || [],
     labStatus: row.lab_status, labResults: row.lab_results,
     radiologyDone: row.radiology_done, diagLabDone: row.diag_lab_done,
     completedTests: row.completed_tests || [],
@@ -1052,6 +1105,11 @@ You MUST return your response as a valid JSON object matching exactly this schem
     dischargeConsent: row.discharge_consent || {},
     dischargeSummary: row.discharge_summary || '',
     visitHistory: row.visit_history || [],
+    ipdDrugRequests: row.ipd_drug_requests || [],
+    ward: row.ward || '',
+    admissionProcedure: row.admission_procedure || '',
+    admissionExpectedDays: row.admission_expected_days || '',
+    admissionBillingNote: row.admission_billing_note || '',
   });
 
   const fetchPatients = async () => {
@@ -1089,6 +1147,9 @@ You MUST return your response as a valid JSON object matching exactly this schem
   const [newPatientAge, setNewPatientAge] = useState('');
   const [newPatientGender, setNewPatientGender] = useState('male');
   const [newPatientTriage, setNewPatientTriage] = useState('GREEN');
+  const [newPatientDepartment, setNewPatientDepartment] = useState('General Medicine');
+  const [doctorDeptFilter, setDoctorDeptFilter] = useState('All');
+  const [doctorDeptSearch, setDoctorDeptSearch] = useState('');
   const [newPatientOccupation, setNewPatientOccupation] = useState('');
   const [followUpUhid, setFollowUpUhid] = useState("");
   const [followUpPreview, setFollowUpPreview] = useState(null); // { isDischarged, lastVisitDate, diagnoses, dischargeOutcome, dischargeSummary }
@@ -1096,15 +1157,23 @@ You MUST return your response as a valid JSON object matching exactly this schem
   const [newPatientInsuranceId, setNewPatientInsuranceId] = useState('');
   const [newPatientContact, setNewPatientContact] = useState('');
   const [receptionSearch, setReceptionSearch] = useState('');
+  const [receptionSubTab, setReceptionSubTab] = useState('registration'); // 'registration' | 'admission'
   const [nursingSearch, setNursingSearch] = useState('');
   const [doctorQueueSearch, setDoctorQueueSearch] = useState('');
   const [ipdSearch, setIpdSearch] = useState('');
+  const [ipdWardFilter, setIpdWardFilter] = useState('All');
+  const [ipdWardSearch, setIpdWardSearch] = useState('');
   const [ipdActiveDayMap, setIpdActiveDayMap] = useState({});     // { [patientId]: dayId }
+  const [ipdEditingDateFor, setIpdEditingDateFor] = useState(null); // dayId whose date is being edited
   const [ipdMedInputs, setIpdMedInputs] = useState({});           // { [patientId]: { name, dosage, duration } }
+  const [ipdExpandedIds, setIpdExpandedIds] = useState({});       // { [patientId]: boolean } - toggle full card details
   const [ipdAdviceInputs, setIpdAdviceInputs] = useState({});// { [patientId]: adviceText }
   const [ipdProcedureInputs, setIpdProcedureInputs] = useState({}); // { [patientId]: procedureText }
   const [ipdVitalInputs, setIpdVitalInputs] = useState({});         // { [patientId]: { bp, pulse, temp, spo2 } }
   const [ipdInvestigationInputs, setIpdInvestigationInputs] = useState({}); // { [patientId]: string }
+  const [ipdDrugRequestInputs, setIpdDrugRequestInputs] = useState({}); // { [patientId]: string }
+  const [ipdNurseSearch, setIpdNurseSearch] = useState('');
+  const [ipdNurseWardFilter, setIpdNurseWardFilter] = useState('All');
   const ipdVitalRefs = React.useRef({}); // { [patientId]: { time, bp, pulse, temp, spo2 } refs }
 
   const setIpdVitalRef = (patientId, field, el) => {
@@ -1169,6 +1238,13 @@ You MUST return your response as a valid JSON object matching exactly this schem
 
 // Manual History & Duration Tracking State
   const [manualHistory, setManualHistory] = useState('');
+  const [previousHistory, setPreviousHistory] = useState('');
+  const [familyHistory, setFamilyHistory] = useState('');
+  const [showReferralForm, setShowReferralForm] = useState(false);
+  const [referralDeptSearch, setReferralDeptSearch] = useState('');
+  const [referralTargetDept, setReferralTargetDept] = useState('');
+  const [referralReason, setReferralReason] = useState('');
+  const [referralAdviceInputs, setReferralAdviceInputs] = useState({}); // { [referralId]: text }
   const [symptomDurations, setSymptomDurations] = useState({});
   const [openDurationFor, setOpenDurationFor] = useState(null);
 
@@ -1184,6 +1260,14 @@ You MUST return your response as a valid JSON object matching exactly this schem
   const [manualProcedureInput, setManualProcedureInput] = useState('');
   const [aiRouteOfCare, setAiRouteOfCare] = useState(null); // 'OPD' | 'IPD' | null
   const [routeOverride, setRouteOverride] = useState(null); // doctor's manual override
+  const [showWardModal, setShowWardModal] = useState(false);
+  const [selectedWardForAdmission, setSelectedWardForAdmission] = useState('');
+  const [pendingIpdFinish, setPendingIpdFinish] = useState(false);
+  const [wardAdmissionPatient, setWardAdmissionPatient] = useState(null);
+  const [showAdmissionRequestModal, setShowAdmissionRequestModal] = useState(false);
+  const [admissionProcedureText, setAdmissionProcedureText] = useState('');
+  const [admissionExpectedDays, setAdmissionExpectedDays] = useState('');
+
   const [planSubTab, setPlanSubTab] = useState('rx'); // 'rx' | 'procedures' | 'nonpharm' | 'followup'
 
   // Manual Medicine Input State
@@ -1239,6 +1323,8 @@ You MUST return your response as a valid JSON object matching exactly this schem
     }
     setAiExamError('');
     setManualHistory('');
+    setPreviousHistory(activePatient?.savedPreviousHistory || '');
+    setFamilyHistory(activePatient?.savedFamilyHistory || '');
     setExamSuggestions(null);
     setAiExamLoading(false);
     setManualDiagnosis('');
@@ -1398,6 +1484,7 @@ You MUST return your response as a valid JSON object matching exactly this schem
             status: 'Nursing',
             complaint: newPatientOccupation || 'Follow-up visit',
             triage: newPatientTriage,
+            department: newPatientDepartment,
             vitals: null,
             savedSymptoms: [],
             savedNegativeHistory: [],
@@ -1417,6 +1504,16 @@ You MUST return your response as a valid JSON object matching exactly this schem
             nonPharmManagement: [],
             followUpAdvice: '',
             dailyOrders: [],
+            admittedAt: null,
+            dischargedAt: null,
+            dischargeOutcome: '',
+            dischargeConsent: {},
+            dischargeSummary: '',
+            ward: '',
+            admissionProcedure: '',
+            admissionExpectedDays: '',
+            admissionBillingNote: '',
+            ipdDrugRequests: [],
           };
 
           if (wasInLocalList) {
@@ -1429,6 +1526,7 @@ You MUST return your response as a valid JSON object matching exactly this schem
           updatePatientInDb(existing.dbId, {
             status: 'Nursing',
             complaint: resetPatch.complaint,
+            department: newPatientDepartment,
             triage: newPatientTriage,
             vitals: null,
             saved_symptoms: [],
@@ -1449,6 +1547,16 @@ You MUST return your response as a valid JSON object matching exactly this schem
             follow_up_advice: '',
             daily_orders: [],
             visit_history: updatedVisitHistory,
+            admitted_at: null,
+            discharged_at: null,
+            discharge_outcome: '',
+            discharge_consent: {},
+            discharge_summary: '',
+            ward: '',
+            admission_procedure: '',
+            admission_expected_days: '',
+            admission_billing_note: '',
+            ipd_drug_requests: [],
           });
 
           setFollowUpUhid("");
@@ -1477,7 +1585,7 @@ You MUST return your response as a valid JSON object matching exactly this schem
         display_id: `#${Math.floor(Math.random() * 9000 + 10)}`,
         name: newPatientName, age: `${newPatientAge}y`, gender: newPatientGender,
         uhid: newUhid,
-        triage: newPatientTriage, status: 'Nursing',
+        triage: newPatientTriage, status: 'Nursing', department: newPatientDepartment,
         occupation: newPatientOccupation || '', address: newPatientAddress || '',
         insurance_id: newPatientInsuranceId || '', contact: newPatientContact || '',
         vitals: null,
@@ -1531,11 +1639,18 @@ You MUST return your response as a valid JSON object matching exactly this schem
 
   // --- Doctor Panel Actions ---
   const toggleSymptom = (symptom) => {
-    if (selectedSymptoms.find(s => s.id === symptom.id)) {
+    const exists = selectedSymptoms.find(s => s.id === symptom.id);
+    if (exists) {
       setSelectedSymptoms(selectedSymptoms.filter(s => s.id !== symptom.id));
+      setManualHistory(prev => {
+        const escaped = symptom.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const pattern = new RegExp(`,?\\s*${escaped}(\\s*\\([^)]*\\))?`, 'g');
+        return prev.replace(pattern, '').replace(/^,\s*/, '').trim();
+      });
     } else {
       setSelectedSymptoms([...selectedSymptoms, symptom]);
       setSymptomSearch('');
+      setManualHistory(prev => (prev.trim() === '' ? symptom.name : `${prev.trim()}, ${symptom.name}`));
     }
   };
 
@@ -1575,7 +1690,10 @@ You MUST return your response as a valid JSON object matching exactly this schem
       Vitals: ${activePatient?.vitals ? `BP ${activePatient.vitals.bp} mmHg, Pulse ${activePatient.vitals.pulse} bpm, Temp ${activePatient.vitals.temp}°F, SpO2 ${activePatient.vitals.spo2}%` : 'Not recorded'}.
       Selected Clinical Findings & Symptoms: ${symNames}.
 Doctor's Manual History: ${manualHistory || 'Not provided'}.
+Previous History (Past Illness/Surgery/Medications): ${previousHistory || 'Not provided'}.
+Family History: ${familyHistory || 'Not provided'}.
 Negative History: ${selectedNegativeHistory.join(', ') || 'None confirmed'}.
+Referral/Consult Advice from other departments: ${(activePatient?.referrals || []).filter(r => r.advice).map(r => `${r.toDept}: ${r.advice}`).join('; ') || 'None'}.
 Investigations Ordered: ${selectedInvestigations.join(', ') || 'None selected'}.
 
 General Examination Findings: ${
@@ -1778,8 +1896,8 @@ Based on the complete patient summary above (symptoms, manual history, negative 
     setNonPharmManagement([]);
     if (activePatient) {
       const finalExamValues = buildFinalExamValues();
-      setPatients(prev => prev.map(p => p.id === activePatient.id ? { ...p, savedExamValues: finalExamValues, savedManualHistory: manualHistory } : p));
-      updatePatientInDb(activePatient.dbId, { saved_exam_values: finalExamValues, saved_manual_history: manualHistory });
+      setPatients(prev => prev.map(p => p.id === activePatient.id ? { ...p, savedExamValues: finalExamValues, savedManualHistory: manualHistory, savedPreviousHistory: previousHistory, savedFamilyHistory: familyHistory } : p));
+      updatePatientInDb(activePatient.dbId, { saved_exam_values: finalExamValues, saved_manual_history: manualHistory, saved_previous_history: previousHistory, saved_family_history: familyHistory });
     }
     setConsultStep('plan');
   };
@@ -1791,19 +1909,21 @@ Based on the complete patient summary above (symptoms, manual history, negative 
 
       const diagnosisList = acceptedDiagnosis.join(', ');
       const promptText = `
-      You are a multi-disciplinary panel of senior consultants writing a complete, evidence-based treatment plan as a single expert AI — spanning General Medicine (Harrison's Principles of Internal Medicine), General Surgery (Sabiston Textbook of Surgery), Obstetrics & Gynecology (Williams Obstetrics, Dutta's Textbook of Obstetrics, Shaw's Textbook of Gynecology, FOGSI guidelines), Pediatrics, Orthopedics, and Psychiatry. Match the treatment plan's specialty depth to the diagnosis given — an obstetric or gynecological diagnosis must get an OBG-specialist-grade plan (correct drug safety category for pregnancy/lactation where relevant, standard OBG monitoring and referral thresholds), not a generic internal-medicine plan.
+      You are a multi-disciplinary panel of senior consultants writing a complete, evidence-based treatment plan as a single expert AI — spanning General Medicine (Harrison's Principles of Internal Medicine), General Surgery (Sabiston Textbook of Surgery), Obstetrics & Gynecology (Williams Obstetrics, Dutta's Textbook of Obstetrics, Shaw's Textbook of Gynecology, FOGSI guidelines), Pediatrics, Orthopedics, Ent, Opthalmoloy ,cradiology  and Psychiatry. Match the treatment plan's specialty depth to the diagnosis given — an obstetric or gynecological diagnosis must get an OBG-specialist-grade plan (correct drug safety category for pregnancy/lactation where relevant, standard OBG monitoring and referral thresholds), not a generic internal-medicine plan.
       
-      Patient Profile: ${activePatient?.age}, ${activePatient?.gender}.
+          Patient Profile: ${activePatient?.age}, ${activePatient?.gender}.
       Final Diagnosis: ${diagnosisList}.
       Vitals: ${activePatient?.vitals ? JSON.stringify(activePatient.vitals) : 'Not recorded'}.
       Triage: ${activePatient?.triage}.
+      Previous History: ${previousHistory || 'Not provided'}.
+      Family History: ${familyHistory || 'Not provided'}.
 
       IMPORTANT SAFETY INSTRUCTION: Do not default to oral medication out of caution. If the diagnosis, severity, vitals, or triage level (e.g., RED/unstable vitals, sepsis, severe dehydration, inability to tolerate oral intake, severe infection, obstetric emergency) clinically warrants IV/parenteral therapy or inpatient monitoring under standard guidelines, you MUST prescribe the appropriate IV medications/fluids and set "routeOfCare" to "IPD". Only use "OPD" when oral/outpatient management is genuinely sufficient per guidelines. Under-prescribing IV therapy when indicated is a critical error to avoid.
 
       Generate a complete management plan for this diagnosis, including:
-      1. "medications" - standard pharmacological prescription with proper drug names, dosages, durations, and instructions. Prefix IV medications clearly, e.g. "Inj. Ceftriaxone 1g IV BD".
-      2. "nonPharmacological" - non-drug management: lifestyle/diet advice, physiotherapy, wound care, monitoring instructions, referral advice, etc.
-      3. "proceduralManagement" - any surgical or procedural interventions indicated for this diagnosis (e.g., incision & drainage, suturing, splinting, referral for surgery). If none are indicated, return an empty array.
+          1. "medications" - standard pharmacological prescription with proper drug names, dosages, durations, and instructions. Prefix IV medications clearly, e.g. "Inj. Ceftriaxone 1g IV BD".
+      2. "nonPharmacological" - ONLY passive lifestyle/monitoring guidance that does not require a clinician to physically DO anything to the patient: diet advice, rest, hydration, positioning, follow-up scheduling, patient education. Do NOT put any hands-on clinical action here.
+      3. "proceduralManagement" - ANY hands-on clinical action a doctor/nurse must physically perform: incision & drainage, suturing, splinting/casting, dressing/wound care, catheterization, injections/infusions given as a procedure (not the drug itself), physiotherapy sessions, referral for surgery, delivery/OT procedures, etc. If an item involves touching, treating, or physically intervening on the patient, it belongs here — NOT in nonPharmacological. If none are indicated, return an empty array.
       4. "routeOfCare" - "IPD" if inpatient admission and IV therapy/monitoring is clinically indicated, otherwise "OPD".
       5. "routeReason" - one short sentence justifying the routeOfCare decision.
 
@@ -1926,6 +2046,10 @@ Based on the complete patient summary above (symptoms, manual history, negative 
     updatePatientInDb(patient.dbId, { daily_orders: updatedDays });
   };
 
+  const toggleIpdExpanded = (patientId) => {
+    setIpdExpandedIds(prev => ({ ...prev, [patientId]: !prev[patientId] }));
+  };
+
   const addIpdDay = (patient) => {
     const days = patient.dailyOrders || [];
     const lastDay = days[days.length - 1];
@@ -1933,14 +2057,32 @@ Based on the complete patient summary above (symptoms, manual history, negative 
       id: `day-${Date.now()}`,
       label: `Day ${days.length + 1}`,
       date: new Date().toLocaleDateString('en-GB'),
-      meds: (lastDay?.meds || []).map(m => ({ ...m, id: Date.now() + Math.random() })),
+      meds: (lastDay?.meds || []).map(m => ({ ...m, id: Date.now() + Math.random(), given: false })),
       advice: (lastDay?.advice || []).map(a => ({ ...a, id: Date.now() + Math.random() })),
-      procedures: (lastDay?.procedures || []).map(pr => ({ ...pr, id: Date.now() + Math.random() })),
+      procedures: [],
       vitalsLog: [],
     };
     const updatedDays = [...days, newDay];
     saveIpdDailyOrders(patient, updatedDays);
     setIpdActiveDayMap(prev => ({ ...prev, [patient.id]: newDay.id }));
+  };
+
+  const removeIpdDay = (patient, dayId) => {
+    if (!window.confirm('Delete this day and all its orders (meds, advice, procedures, vitals)? This cannot be undone.')) return;
+    const updatedDays = (patient.dailyOrders || []).filter(d => d.id !== dayId);
+    saveIpdDailyOrders(patient, updatedDays);
+    setIpdActiveDayMap(prev => {
+      const next = { ...prev };
+      if (next[patient.id] === dayId) delete next[patient.id];
+      return next;
+    });
+  };
+
+  const updateIpdDayDate = (patient, dayId, newDate) => {
+    const updatedDays = (patient.dailyOrders || []).map(d =>
+        d.id === dayId ? { ...d, date: newDate } : d
+    );
+    saveIpdDailyOrders(patient, updatedDays);
   };
 
   const handleIpdMedInputChange = (patientId, field, value) => {
@@ -2079,6 +2221,8 @@ Chief Complaint at Admission: ${dischargePatient.complaint || 'Not recorded'}.
 Presenting Symptoms: ${(dischargePatient.savedSymptoms || []).map(s => s.name).join(', ') || 'Not recorded'}.
 Doctor's Manual History (Chief Complaint/HPI): ${dischargePatient.savedManualHistory || 'Not recorded'}.
 Negative History: ${(dischargePatient.savedNegativeHistory || []).join(', ') || 'None confirmed'}.
+Family History: ${dischargePatient.savedFamilyHistory || 'Not recorded'}.
+Negative History: ${(dischargePatient.savedNegativeHistory || []).join(', ') || 'None confirmed'}.
 Examination Findings on Admission: ${dischargePatient.savedExamValues ? Object.entries(dischargePatient.savedExamValues).map(([k,v]) => `${k}: ${v}`).join(', ') : 'Not documented'}.
 Investigations Ordered: ${(dischargePatient.savedInvestigations || []).join(', ') || 'None'}.
 Lab Results: ${dischargePatient.labResults || 'Not recorded'}.
@@ -2087,6 +2231,7 @@ Discharge Date & Time: ${dischargeStr}.
 Admission Vitals: ${admissionVitalsStr}.
 Latest/Discharge Vitals: ${vitalsStr}.
 Final Diagnosis: ${(dischargePatient.diagnoses || []).join(', ') || 'Not recorded'}.
+Medication Administration Status: ${(() => { const s = getMedGivenStats(dischargePatient); return `${s.given} of ${s.total} doses marked as given, ${s.pending} pending at time of discharge.`; })()}
 Day-wise Hospital Course:
 ${daysSummary || 'Not recorded'}
 Discharge Outcome: ${dischargeOutcome}.
@@ -2098,9 +2243,10 @@ Generate a complete, professional Discharge Summary including:
 3. Final Diagnosis/Provisional Diagnosis
 4. Brief Hospital Course (chronological narrative referencing the day-wise data)
 5. [IF APPLICABLE - FOR OBGY / SURGICAL PATIENTS ONLY]: Include a dedicated subsection/section for "Procedure Summary" (detailing any surgeries performed, intraoperative findings, and procedure course) OR "Delivery Note & Outcome" (detailing the mode of delivery, date/time, fetal outcome, sex of the baby, Apgar scores, and condition of the mother). Skip this section if the patient is neither surgical nor OBGY.
-5. Condition at Discharge (based on latest vitals and outcome)
-7. Advice & Follow-up Instructions (in both English and Gujarati, clear and patient-friendly)
-8. Red Flag Warning Signs (when to return to hospital immediately)
+6. Discharge Medications (clean list with dosage & duration; include tapering schedule if doses changed across days). Mention the given/pending administration status provided above as a brief note.
+7. Condition at Discharge (based on latest vitals and outcome)
+8. Advice & Follow-up Instructions (in both English and Gujarati, clear and patient-friendly)
+9. Red Flag Warning Signs (when to return to hospital immediately)
 
 CRITICAL FORMATTING RULES:
 - Do NOT restate the patient's name, UHID, age, gender, admission date/time, or discharge date/time anywhere in your output — these already appear in a separate header in the printed document, so repeating them creates duplication.
@@ -2176,13 +2322,15 @@ Keep the tone formal, clinical, and concise. Return ONLY the discharge summary a
     const dischargeStr = patient.dischargedAt ? new Date(patient.dischargedAt).toLocaleString('en-IN') : new Date().toLocaleString('en-IN');
     const lastDay = (patient.dailyOrders || [])[(patient.dailyOrders || []).length - 1];
     const meds = lastDay?.meds || [];
+    const medStats = getMedGivenStats(patient);
     const medsHtml = meds.map(m => `
       <tr>
         <td style="padding:8px;border-bottom:1px solid #ddd;">${m.name}</td>
         <td style="padding:8px;border-bottom:1px solid #ddd;">${m.dosage}</td>
         <td style="padding:8px;border-bottom:1px solid #ddd;">${m.duration}</td>
+        <td style="padding:8px;border-bottom:1px solid #ddd;">${m.given ? '<span style="color:green;font-weight:bold;">✓ Given</span>' : '<span style="color:#b45309;font-weight:bold;">Pending</span>'}</td>
       </tr>
-    `).join('');
+    `);
 
     const printWindow = window.open('', '_blank');
     printWindow.document.write(`
@@ -2199,17 +2347,14 @@ Keep the tone formal, clinical, and concise. Return ONLY the discharge summary a
         <hr/>
         <h3>Discharge Summary</h3>
         <div style="white-space:pre-wrap; font-size:14px; line-height:1.6;">${(patient.dischargeSummary || 'Not generated').replace(/</g,'&lt;')}</div>
-        <h3>Discharge Medications</h3>
+      <h3>Discharge Medications</h3>
+<p style="font-size:13px; margin:0 0 8px 0;"><b>Administration Summary:</b> ${medStats.given} of ${medStats.total} doses given, ${medStats.pending} pending at discharge.</p>
         <table style="width:100%; border-collapse:collapse;">
-          <thead><tr style="background:#eee; text-align:left;"><th style="padding:8px;">Medicine</th><th style="padding:8px;">Dosage</th><th style="padding:8px;">Duration</th></tr></thead>
-          <tbody>${medsHtml || '<tr><td colspan="3" style="padding:8px;">None</td></tr>'}</tbody>
+        <thead><tr style="background:#eee; text-align:left;"><th style="padding:8px;">Medicine</th><th style="padding:8px;">Dosage</th><th style="padding:8px;">Duration</th><th style="padding:8px;">Status</th></tr></thead>
+         <tbody>${medsHtml.join('') || '<tr><td colspan="4" style="padding:8px;">None</td></tr>'}</tbody>
         </table>
         <br/><br/>
-     
-     <div style="display:flex; justify-content:space-between; align-items:flex-end; margin-top:30px;">
- 
- <div style="display:flex; justify-content:space-between; align-items:flex-end; margin-top:30px;">
-  <p style="margin:0;">Nurse's Signature: __________________</p>
+           <div style="display:flex; justify-content:flex-end; margin-top:30px;">
   <div style="text-align:center;">
     ${hospitalInfo.doctorSign ? `<img src="${hospitalInfo.doctorSign}" alt="Sign" style="height:45px; object-fit:contain; display:block; margin:0 auto;" />` : `<p style="margin:0;">__________________</p>`}
     <p style="margin:4px 0 0 0; font-weight:bold;">${hospitalInfo.doctorName || "Doctor's Signature"}</p>
@@ -2295,19 +2440,150 @@ Keep the tone formal, clinical, and concise. Return ONLY the discharge summary a
     updatePatientInDb(patient.dbId, { investigations_ordered: updated });
   };
 
+  const requestIpdDrugFromPharmacy = (patient) => {
+    const text = (ipdDrugRequestInputs[patient.id] || '').trim();
+    if (!text) return;
+    const alreadyActive = (patient.ipdDrugRequests || []).some(
+        r => r.name.trim().toLowerCase() === text.toLowerCase() && r.status !== 'Sent'
+    );
+    if (alreadyActive) {
+      alert(`"${text}" is already requested and pending at Pharmacy. Avoid sending a duplicate request — this is what causes double stock deduction.`);
+      return;
+    }
+    const newRequest = { id: Date.now() + Math.random(), name: text, status: 'Pending', requestedAt: new Date().toLocaleString('en-IN') };
+    const updated = [...(patient.ipdDrugRequests || []), newRequest];
+    setPatients(prev => prev.map(p => p.id === patient.id ? { ...p, ipdDrugRequests: updated } : p));
+    updatePatientInDb(patient.dbId, { ipd_drug_requests: updated });
+    setIpdDrugRequestInputs(prev => ({ ...prev, [patient.id]: '' }));
+  };
+
+  const markIpdDrugRequestSent = async (patient, requestId) => {
+    const request = (patient.ipdDrugRequests || []).find(r => r.id === requestId);
+    if (!request || request.status === 'Sent') return; // already dispensed once — block double dispensing
+
+    const updated = (patient.ipdDrugRequests || []).map(r => r.id === requestId ? { ...r, status: 'Sent' } : r);
+    setPatients(prev => prev.map(p => p.id === patient.id ? { ...p, ipdDrugRequests: updated } : p));
+    updatePatientInDb(patient.dbId, { ipd_drug_requests: updated });
+
+    // Best-effort auto-deduct from inventory by matching name, so nobody has to manually
+    // subtract stock a second time (that manual step was the source of the double-count).
+    const match = inventory.find(item => item.name.trim().toLowerCase() === request.name.trim().toLowerCase());
+    if (match) {
+      const newStock = Math.max((match.stock || 0) - 1, 0);
+      setInventory(prev => prev.map(item => item.id === match.id ? { ...item, stock: newStock } : item));
+      const { error } = await supabase.from('inventory').update({ stock: newStock }).eq('id', match.id);
+      if (error) console.error('Inventory auto-deduct failed:', error);
+    }
+  };
+
+  const removeIpdDrugRequest = (patient, requestId) => {
+    const updated = (patient.ipdDrugRequests || []).filter(r => r.id !== requestId);
+    setPatients(prev => prev.map(p => p.id === patient.id ? { ...p, ipdDrugRequests: updated } : p));
+    updatePatientInDb(patient.dbId, { ipd_drug_requests: updated });
+  };
+
+  const addReferral = (patient) => {
+    if (!referralTargetDept.trim() || !referralReason.trim()) return;
+    const newReferral = {
+      id: Date.now() + Math.random(),
+      toDept: referralTargetDept,
+      reason: referralReason.trim(),
+      requestedAt: new Date().toLocaleString('en-IN'),
+      status: 'Pending',
+      advice: '',
+    };
+    const updated = [...(patient.referrals || []), newReferral];
+    setPatients(prev => prev.map(p => p.id === patient.id ? { ...p, referrals: updated } : p));
+    updatePatientInDb(patient.dbId, { referrals: updated });
+    setShowReferralForm(false);
+    setReferralTargetDept('');
+    setReferralReason('');
+    setReferralDeptSearch('');
+  };
+
+  const sendReferralAdvice = (patient, referralId) => {
+    const text = (referralAdviceInputs[referralId] || '').trim();
+    if (!text) return;
+    const updated = (patient.referrals || []).map(r => r.id === referralId ? { ...r, advice: text, status: 'Answered', respondedAt: new Date().toLocaleString('en-IN') } : r);
+    setPatients(prev => prev.map(p => p.id === patient.id ? { ...p, referrals: updated } : p));
+    updatePatientInDb(patient.dbId, { referrals: updated });
+    setReferralAdviceInputs(prev => ({ ...prev, [referralId]: '' }));
+  };
+
+  const recommendReferralTransfer = (patient, referralId) => {
+    const text = (referralAdviceInputs[referralId] || '').trim();
+    const updated = (patient.referrals || []).map(r => r.id === referralId ? { ...r, advice: text || r.advice, status: 'Transfer Recommended', respondedAt: new Date().toLocaleString('en-IN') } : r);
+    setPatients(prev => prev.map(p => p.id === patient.id ? { ...p, referrals: updated } : p));
+    updatePatientInDb(patient.dbId, { referrals: updated });
+    setReferralAdviceInputs(prev => ({ ...prev, [referralId]: '' }));
+  };
+
+  const acceptReferralTransfer = (patient, referralId) => {
+    const referral = (patient.referrals || []).find(r => r.id === referralId);
+    if (!referral) return;
+    const updatedReferrals = (patient.referrals || []).map(r => r.id === referralId ? { ...r, status: 'Transferred' } : r);
+    setPatients(prev => prev.map(p => p.id === patient.id ? { ...p, department: referral.toDept, referrals: updatedReferrals } : p));
+    updatePatientInDb(patient.dbId, { department: referral.toDept, referrals: updatedReferrals });
+  };
+
+  const dismissReferralTransfer = (patient, referralId) => {
+    const updated = (patient.referrals || []).map(r => r.id === referralId ? { ...r, status: 'Answered' } : r);
+    setPatients(prev => prev.map(p => p.id === patient.id ? { ...p, referrals: updated } : p));
+    updatePatientInDb(patient.dbId, { referrals: updated });
+  };
+
+  const getMedGivenStats = (patient) => {
+    let total = 0, given = 0;
+    (patient.dailyOrders || []).forEach(day => {
+      (day.meds || []).forEach(m => {
+        total += 1;
+        if (m.given) given += 1;
+      });
+    });
+    return { total, given, pending: total - given };
+  };
+
+  const getPendingPharmacyMeds = (patient) => {
+    // IPD patient: only meds NOT yet marked "given" during admission stay should go to pharmacy at discharge.
+    if (patient.admittedAt && (patient.dailyOrders || []).length > 0) {
+      const map = {};
+      (patient.dailyOrders || []).forEach(day => {
+        (day.meds || []).forEach(m => {
+          const key = `${m.name}__${m.dosage}__${m.duration}`;
+          if (!map[key]) map[key] = { id: key, name: m.name, dosage: m.dosage, duration: m.duration, given: true };
+          if (!m.given) map[key].given = false;
+        });
+      });
+      return Object.values(map).filter(m => !m.given);
+    }
+    // Pure OPD patient — nothing "given" yet, show full prescription.
+    return patient.prescriptions || [];
+  };
 
   const finishConsultation = () => {
     if (!activePatient) return;
     const ivIndicated = aiRouteOfCare === 'IPD' || requiresIVAdmission(prescriptions, nonPharmManagement.filter(i => i.type === 'Procedure'));
     const finalRoute = routeOverride ? routeOverride : (ivIndicated ? 'IPD' : 'OPD');
-    const nextStatus = finalRoute === 'IPD' ? 'IPD' : 'Pharmacy';
 
-    // If going to IPD, seed Day 1 of dailyOrders with everything the doctor already entered
-    // (AI-suggested + manually added meds, non-pharm advice, and procedures), but only if
-    // this patient doesn't already have day-wise orders (avoid overwriting an existing IPD stay).
+    if (finalRoute === 'IPD') {
+      // Ward hવે doctor ma nathi nakki thatu — pehla Admission Desk ne procedure + expected indoor days aapo
+      setAdmissionProcedureText('');
+      setAdmissionExpectedDays('');
+      setShowAdmissionRequestModal(true);
+      return;
+    }
+
+    completeConsultation('OPD', '');
+  };
+
+  const completeConsultation = (finalRoute, chosenWard) => {
+    if (!activePatient) return;
+    const nextStatus = finalRoute === 'IPD' ? 'IPD' : (finalRoute === 'Admission' ? 'Admission' : 'Pharmacy');
+
     let dailyOrdersPatch = activePatient.dailyOrders || [];
     const admittedAtPatch = (nextStatus === 'IPD' && !activePatient.admittedAt) ? new Date().toISOString() : activePatient.admittedAt;
-    if (nextStatus === 'IPD' && dailyOrdersPatch.length === 0 && (prescriptions.length > 0 || nonPharmManagement.length > 0 || followUpAdvice.trim())) {
+    if ((nextStatus === 'IPD' || nextStatus === 'Admission') && dailyOrdersPatch.length === 0 && (prescriptions.length > 0 || nonPharmManagement.length > 0 || followUpAdvice.trim())) {
+
       const day1Meds = prescriptions.map(m => ({
         id: m.id || Date.now() + Math.random(),
         name: m.name,
@@ -2329,6 +2605,8 @@ Keep the tone formal, clinical, and concise. Return ONLY the discharge summary a
       dailyOrdersPatch = [{ id: `day-${Date.now()}`, label: 'Day 1', date: new Date().toLocaleDateString('en-GB'), meds: day1Meds, advice: day1Advice, procedures: day1Procedures, vitalsLog: [] }];
     }
 
+    const wardPatch = nextStatus === 'IPD' ? chosenWard : activePatient.ward;
+
     setPatients(patients.map(p => {
       if (p.id === activePatient.id) {
         return {
@@ -2340,6 +2618,9 @@ Keep the tone formal, clinical, and concise. Return ONLY the discharge summary a
           followUpAdvice: followUpAdvice,
           dailyOrders: dailyOrdersPatch,
           admittedAt: admittedAtPatch,
+          ward: wardPatch,
+          admissionProcedure: nextStatus === 'Admission' ? admissionProcedureText : p.admissionProcedure,
+          admissionExpectedDays: nextStatus === 'Admission' ? admissionExpectedDays : p.admissionExpectedDays,
         };
       }
       return p;
@@ -2352,28 +2633,41 @@ Keep the tone formal, clinical, and concise. Return ONLY the discharge summary a
       non_pharm_management: nonPharmManagement,
       follow_up_advice: followUpAdvice,
       admitted_at: admittedAtPatch,
+      ward: wardPatch,
+      ...(nextStatus === 'Admission' ? { admission_procedure: admissionProcedureText, admission_expected_days: admissionExpectedDays } : {}),
     });
 
     setSelectedPatientId(null);
-    setActiveTab(nextStatus === 'IPD' ? 'ipd' : 'pharmacy');
+    setActiveTab(nextStatus === 'IPD' ? 'ipd' : (nextStatus === 'Pharmacy' ? 'pharmacy' : 'doctor'));
 
-    setPrescriptions([]);          // પ્રિસ્ક્રિપ્શન લિસ્ટ ખાલી કરો
-    setNonPharmManagement([]);     // નોન-ફાર્માકોલોજિકલ મેનેજમેન્ટ ખાલી કરો
-    setFollowUpAdvice("");         // ફોલો-અપ એડવાઈઝ ખાલી કરો
-    setAcceptedDiagnosis([]);      // જો ડાયગ્નોસિસ પણ ખાલી કરવું હોય તો
-    setRouteOverride(null);        // રૂટ ઓવરરાઈડ રીસેટ કરો
+    setPrescriptions([]);
+    setNonPharmManagement([]);
+    setFollowUpAdvice("");
+    setAcceptedDiagnosis([]);
+    setRouteOverride(null);
+    setShowWardModal(false);
+    setSelectedWardForAdmission('');
+    setShowAdmissionRequestModal(false);
+    setAdmissionProcedureText('');
+    setAdmissionExpectedDays('');
   };
 
-
     // --- Pharmacy Actions ---
-    const dispenseMedication = (patientId) => {
-      setPatients(patients.map(p => {
-        if (p.id === patientId) {
-          return {...p, status: 'Discharged'};
-        }
-        return p;
-      }));
-    };
+  const dispenseMedication = (patientId) => {
+    const target = patients.find(p => p.id === patientId);
+    setPatients(patients.map(p => {
+      if (p.id === patientId) {
+        return {...p, status: 'Review'};
+      }
+      return p;
+    }));
+    if (target) updatePatientInDb(target.dbId, { status: 'Review' });
+  };
+
+  const markAsDischarged = (patient) => {
+    setPatients(prev => prev.map(p => p.id === patient.id ? { ...p, status: 'Discharged' } : p));
+    updatePatientInDb(patient.dbId, { status: 'Discharged' });
+  };
 
   const updateStock = async (id, newStock) => {
     const stockValue = parseInt(newStock) || 0;
@@ -2536,6 +2830,30 @@ ${patient.followUpAdvice ? `
     setPatients(prev => prev.filter(p => p.id !== patient.id));
   };
 
+  // --- Admission Desk: ward assignment (used by Reception, not tied to doctor's activePatient) ---
+  const openWardModalForAdmission = (patient) => {
+    setWardAdmissionPatient(patient);
+    setSelectedWardForAdmission('');
+    setShowWardModal(true);
+  };
+
+  const confirmWardAdmission = () => {
+    if (!wardAdmissionPatient || !selectedWardForAdmission) return;
+    const admittedAt = new Date().toISOString();
+    setPatients(prev => prev.map(p => p.id === wardAdmissionPatient.id
+        ? { ...p, status: 'IPD', admittedAt, ward: selectedWardForAdmission }
+        : p
+    ));
+    updatePatientInDb(wardAdmissionPatient.dbId, {
+      status: 'IPD',
+      admitted_at: admittedAt,
+      ward: selectedWardForAdmission,
+    });
+    setShowWardModal(false);
+    setWardAdmissionPatient(null);
+    setSelectedWardForAdmission('');
+  };
+
     const SidebarItem = ({icon: Icon, label, id, step}) => (
         <button onClick={() => setActiveTab(id)}
                 className={`w-full flex items-center px-4 py-3 text-sm font-medium transition-colors ${activeTab === id ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-slate-700 hover:text-white'}`}>
@@ -2606,9 +2924,17 @@ ${patient.followUpAdvice ? `
               {currentRole?.tabs?.includes('doctor') && (
                   <SidebarItem step="3" icon={Stethoscope} label="MO Consultation" id="doctor" />
               )}
-              {currentRole?.tabs?.includes('ipd') && (
-                  <SidebarItem step="3b" icon={BedDouble} label="IPD Ward" id="ipd" />
+
+              {currentRole?.tabs?.includes('review') && (
+                  <SidebarItem step="3a" icon={ClipboardCheck} label="MO Final Review" id="review" />
               )}
+              {currentRole?.tabs?.includes('ipd') && (
+                  <SidebarItem step="3b" icon={BedDouble} label="IPD Doctor" id="ipd" />
+              )}
+              {currentRole?.tabs?.includes('ipd_nurse') && (
+                  <SidebarItem step="3c" icon={HeartPulse} label="IPD Nursing" id="ipd_nurse" />
+              )}
+
               {currentRole?.tabs?.includes('lab') && (
                   <SidebarItem step="4" icon={FlaskConical} label="Laboratory" id="lab" />
               )}
@@ -2640,7 +2966,8 @@ ${patient.followUpAdvice ? `
                   {activeTab === 'reception' && "Reception - Patient Registration"}
                   {activeTab === 'nursing' && "Nursing Station - Vitals & Triage"}
                   {activeTab === 'doctor' && "MO Consultation (Doctor's Desk)"}
-                  {activeTab === 'ipd' && "IPD Ward — Admitted Patients"}
+                  {activeTab === 'ipd' && "IPD Doctor — Advice, Rx & Procedures"}
+                  {activeTab === 'ipd_nurse' && "IPD Nursing — Vitals & Medication"}
                   {activeTab === 'lab' && "Laboratory Section"}
                   {activeTab === 'review' && "Final Review Section"}
                   {activeTab === 'pharmacy' && "Pharmacy Dispensing"}
@@ -2655,8 +2982,30 @@ ${patient.followUpAdvice ? `
               {/* --- RECEPTION TAB --- */}
               {activeTab === 'reception' && (
                   <div className="max-w-5xl mx-auto space-y-6">
-                    <div
-                        className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-white p-4 rounded-xl border shadow-sm gap-4">
+                    <div className="bg-white p-3 rounded-xl border shadow-sm flex flex-wrap gap-2 items-center">
+                      <button
+                          onClick={() => setReceptionSubTab('registration')}
+                          className={`px-4 py-2 rounded-lg text-sm font-semibold border ${receptionSubTab === 'registration' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-300 hover:border-blue-300'}`}
+                      >
+                        Registration Desk
+                      </button>
+                      <button
+                          onClick={() => setReceptionSubTab('admission')}
+                          className={`px-4 py-2 rounded-lg text-sm font-semibold border flex items-center gap-2 ${receptionSubTab === 'admission' ? 'bg-red-600 text-white border-red-600' : 'bg-white text-gray-600 border-gray-300 hover:border-red-300'}`}
+                      >
+                        Admission Desk
+                        {patients.filter(p => p.status === 'Admission').length > 0 && (
+                            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${receptionSubTab === 'admission' ? 'bg-white/20' : 'bg-red-100 text-red-700'}`}>
+                              {patients.filter(p => p.status === 'Admission').length}
+                            </span>
+                        )}
+                      </button>
+                    </div>
+
+                    {receptionSubTab === 'registration' && (
+                        <>
+                        <div
+                            className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-white p-4 rounded-xl border shadow-sm gap-4">
                       <div>
                         <h3 className="text-lg font-bold text-gray-800">OPD Patient Registration</h3>
                         <p className="text-xs text-gray-500">Register incoming patients and route them to Nursing
@@ -2689,6 +3038,7 @@ ${patient.followUpAdvice ? `
                           <th className="p-4">Age / Gender</th>
                           <th className="p-4">Occupation</th>
                           <th className="p-4">Address</th>
+                          <th className="p-4">Department</th>
                           <th className="p-4">Triage</th>
                           <th className="p-4">Current Status</th>
                           <th className="p-4">Action</th>
@@ -2703,6 +3053,7 @@ ${patient.followUpAdvice ? `
                                   className="capitalize">{p.gender}</span></td>
                               <td className="p-4 text-gray-600 max-w-[200px] truncate">{p.occupation}</td>
                               <td className="p-4 text-gray-600 max-w-[200px] truncate">{p.address || '-'}</td>
+                              <td className="p-4"><span className="text-xs font-semibold bg-blue-50 text-blue-700 px-2 py-1 rounded">{p.department}</span></td>
                               <td className="p-4">
                           <span className={`text-[10px] font-bold px-2 py-1 rounded-full whitespace-nowrap ${
                               p.triage === 'RED' ? 'bg-red-100 text-red-700 border border-red-200' :
@@ -2713,13 +3064,14 @@ ${patient.followUpAdvice ? `
                           </span>
                               </td>
                               <td className="p-4">
-                          <span className={`px-2.5 py-1 rounded-full text-xs font-semibold whitespace-nowrap ${
-                              p.status === 'Nursing' ? 'bg-orange-100 text-orange-700' :
-                                  p.status === 'Doctor' ? 'bg-indigo-100 text-indigo-700' :
-                                      p.status === 'IPD' ? 'bg-red-100 text-red-700' :
-                                      p.status === 'Pharmacy' ? 'bg-purple-100 text-purple-700' :
-                                          'bg-slate-100 text-slate-800'
-                          }`}>
+                                           <span className={`px-2.5 py-1 rounded-full text-xs font-semibold whitespace-nowrap ${
+                                               p.status === 'Nursing' ? 'bg-orange-100 text-orange-700' :
+                                                   p.status === 'Doctor' ? 'bg-indigo-100 text-indigo-700' :
+                                                       p.status === 'Admission' ? 'bg-amber-100 text-amber-700' :
+                                                           p.status === 'IPD' ? 'bg-red-100 text-red-700' :
+                                                               p.status === 'Pharmacy' ? 'bg-purple-100 text-purple-700' :
+                                                                   'bg-slate-100 text-slate-800'
+                                           }`}>
                             {p.status}
                           </span>
                               </td>
@@ -2746,7 +3098,7 @@ ${patient.followUpAdvice ? `
                         <div
                             className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
                           <div
-                              className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-5 animate-in fade-in zoom-in-95 duration-200">
+                              className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-5 animate-in fade-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
                             <div className="flex items-center justify-between">
                               <h3 className="text-xl font-bold text-gray-900">New Registration</h3>
 
@@ -2871,6 +3223,17 @@ ${patient.followUpAdvice ? `
                                   <option value="RED">RED - Emergency</option>
                                 </select>
                               </div>
+                              <div>
+                                <label className="block text-xs font-semibold text-gray-700 mb-1.5 uppercase tracking-wide">Department</label>
+                                <select
+                                    value={newPatientDepartment}
+                                    onChange={e => setNewPatientDepartment(e.target.value)}
+                                    className="w-full border border-gray-300 rounded-lg px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all bg-white"
+                                >
+                                  {DEPARTMENTS.map(d => <option key={d} value={d}>{d}</option>)}
+                                </select>
+                              </div>
+
 
                               <div>
                                 <label className="block text-xs font-semibold text-gray-700 mb-1.5 uppercase tracking-wide">Address</label>
@@ -2951,6 +3314,74 @@ ${patient.followUpAdvice ? `
                               </div>
                             </form>
                           </div>
+                        </div>
+                    )}
+                        </>
+                    )}
+
+                    {receptionSubTab === 'admission' && (
+                        <div className="space-y-4">
+                          <div className="bg-white p-4 rounded-xl border shadow-sm">
+                            <h3 className="text-lg font-bold text-gray-800">Admission Desk</h3>
+                            <p className="text-xs text-gray-500">Complete billing / package formalities for patients sent here by the doctor, then assign a ward to move them to IPD.</p>
+                          </div>
+
+                          {patients.filter(p => p.status === 'Admission').length === 0 ? (
+                              <div className="bg-white p-10 rounded-xl border border-dashed border-gray-300 text-center text-gray-500">
+                                <BedDouble className="w-12 h-12 mx-auto text-gray-300 mb-3"/>
+                                <p className="font-medium">No patients pending admission formalities.</p>
+                              </div>
+                          ) : (
+                              patients.filter(p => p.status === 'Admission').map(p => (
+                                  <div key={p.id} className="bg-white p-4 rounded-xl border shadow-sm space-y-3">
+                                    <div className="flex justify-between items-start">
+                                      <div>
+                                        <h4 className="font-bold text-gray-900">{p.name} <span className="text-sm text-gray-500">({p.age}, {p.gender})</span></h4>
+                                        <p className="text-xs text-gray-500">{p.uhid} • {p.department}</p>
+                                        {p.diagnoses?.length > 0 && (
+                                            <p className="text-sm text-indigo-700 font-medium mt-1">{p.diagnoses.join(', ')}</p>
+                                        )}
+                                      </div>
+                                      <span className="text-[10px] font-bold px-2 py-1 rounded-full bg-amber-100 text-amber-700 border border-amber-200">AWAITING ADMISSION</span>
+                                    </div>
+
+                                    <div className="bg-gray-50 rounded-lg p-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                      <div>
+                                        <p className="text-xs font-bold text-gray-400 uppercase mb-1">Procedure / Reason</p>
+                                        <p className="text-sm text-gray-800">{p.admissionProcedure || 'Not specified'}</p>
+                                      </div>
+                                      <div>
+                                        <p className="text-xs font-bold text-gray-400 uppercase mb-1">Expected Indoor Days</p>
+                                        <p className="text-sm text-gray-800">{p.admissionExpectedDays ? `${p.admissionExpectedDays} day(s)` : 'Not specified'}</p>
+                                      </div>
+                                    </div>
+
+                                    <div>
+                                      <label className="text-xs font-bold text-gray-400 uppercase mb-1 block">Billing / Package Note</label>
+                                      <textarea
+                                          rows={2}
+                                          defaultValue={p.admissionBillingNote || ''}
+                                          onBlur={(e) => {
+                                            const note = e.target.value;
+                                            setPatients(prev => prev.map(pt => pt.id === p.id ? { ...pt, admissionBillingNote: note } : pt));
+                                            updatePatientInDb(p.dbId, { admission_billing_note: note });
+                                          }}
+                                          placeholder="Package selected, advance received, insurance approval status..."
+                                          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-red-400 outline-none"
+                                      />
+                                    </div>
+
+                                    <div className="flex justify-end">
+                                      <button
+                                          onClick={() => openWardModalForAdmission(p)}
+                                          className="bg-red-600 text-white px-5 py-2.5 rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-red-700"
+                                      >
+                                        <BedDouble size={16}/> Complete Admission → Assign Ward
+                                      </button>
+                                    </div>
+                                  </div>
+                              ))
+                          )}
                         </div>
                     )}
                   </div>
@@ -3080,6 +3511,44 @@ ${patient.followUpAdvice ? `
               {activeTab === 'doctor' && (
                   <div className="flex flex-col h-full space-y-4">
                     {/* Doctor Header: Patient Selector */}
+
+
+                    <div className="bg-white rounded-xl border shadow-sm p-3">
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="text-xs font-semibold text-gray-500 uppercase">Department:</span>
+                        <span className="px-3 py-1 rounded-full text-xs font-bold bg-indigo-600 text-white">{doctorDeptFilter}</span>
+                        {doctorDeptFilter !== 'All' && (
+                            <button onClick={() => setDoctorDeptFilter('All')} className="text-xs text-gray-400 hover:text-red-600 font-semibold">Clear</button>
+                        )}
+                      </div>
+                      <input
+                          type="text"
+                          value={doctorDeptSearch}
+                          onChange={(e) => setDoctorDeptSearch(e.target.value)}
+                          placeholder="Search department..."
+                          className="w-full border rounded-lg px-3 py-1.5 text-sm mb-2 focus:ring-2 focus:ring-indigo-400 outline-none"
+                      />
+                      <div className="flex flex-wrap gap-2 max-h-28 overflow-y-auto">
+                        <button
+                            onClick={() => { setDoctorDeptFilter('All'); setDoctorDeptSearch(''); }}
+                            className={`px-3 py-1.5 rounded-full text-xs font-semibold border ${doctorDeptFilter === 'All' ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-gray-600 border-gray-300 hover:border-indigo-300'}`}
+                        >
+                          All
+                        </button>
+                        {DEPARTMENTS.filter(d => d.toLowerCase().includes(doctorDeptSearch.trim().toLowerCase())).map(d => (
+                            <button
+                                key={d}
+                                onClick={() => { setDoctorDeptFilter(d); setDoctorDeptSearch(''); }}
+                                className={`px-3 py-1.5 rounded-full text-xs font-semibold border ${
+                                    doctorDeptFilter === d ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-gray-600 border-gray-300 hover:border-indigo-300'
+                                }`}
+                            >
+                              {d}
+                            </button>
+                        ))}
+                      </div>
+                    </div>
+
                     <div className="bg-white rounded-xl border shadow-sm p-3 flex items-center gap-2">
                       <Search size={16} className="text-gray-400 shrink-0"/>
                       <input
@@ -3093,11 +3562,11 @@ ${patient.followUpAdvice ? `
                     <div
                         className="bg-white rounded-xl border shadow-sm p-3 flex flex-wrap gap-2 items-center overflow-x-auto">
                       <span className="text-xs font-semibold text-gray-500 uppercase px-2">Waiting:</span>
-                      {patients.filter(p => p.status === 'Doctor' && matchesSearch(p, doctorQueueSearch)).length === 0 ? (
+
+                      {patients.filter(p => p.status === 'Doctor' && matchesSearch(p, doctorQueueSearch) && (doctorDeptFilter === 'All' || p.department === doctorDeptFilter || (p.referrals || []).some(r => r.toDept === doctorDeptFilter && r.status === 'Pending'))).length === 0 ? (
                           <span className="text-sm text-gray-500 italic">No matching patients in queue</span>
                       ) : (
-                          patients.filter(p => p.status === 'Doctor' && matchesSearch(p, doctorQueueSearch)).map(p => (
-
+                          patients.filter(p => p.status === 'Doctor' && matchesSearch(p, doctorQueueSearch) && (doctorDeptFilter === 'All' || p.department === doctorDeptFilter || (p.referrals || []).some(r => r.toDept === doctorDeptFilter && r.status === 'Pending'))).map(p => (
                               <button
                                   key={p.id}
                                   onClick={() => setSelectedPatientId(p.id)}
@@ -3183,6 +3652,106 @@ ${patient.followUpAdvice ? `
                                       <p className="font-semibold text-gray-800">{activePatient.vitals.spo2} <span
                                           className="text-[10px] font-normal text-gray-400">%</span></p>
                                     </div>
+                                  </div>
+
+                              )}
+                            </div>
+
+                            {/* Referrals / Department Consult */}
+                            <div className="bg-white rounded-xl border shadow-sm p-4 flex-shrink-0 space-y-3">
+                              <div className="flex items-center justify-between">
+                                <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider">Referrals / Consults</h4>
+                                <button
+                                    onClick={() => setShowReferralForm(prev => !prev)}
+                                    className="text-xs font-semibold text-indigo-600 hover:text-indigo-800"
+                                >
+                                  {showReferralForm ? 'Cancel' : '+ Refer to Dept'}
+                                </button>
+                              </div>
+
+                              {showReferralForm && (
+                                  <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-3 space-y-2">
+                                    <input
+                                        type="text"
+                                        value={referralDeptSearch}
+                                        onChange={(e) => setReferralDeptSearch(e.target.value)}
+                                        placeholder="Search department..."
+                                        className="w-full border rounded-lg px-2 py-1.5 text-sm"
+                                    />
+                                    <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
+                                      {DEPARTMENTS.filter(d => d.toLowerCase().includes(referralDeptSearch.trim().toLowerCase())).map(d => (
+                                          <button
+                                              key={d}
+                                              onClick={() => setReferralTargetDept(d)}
+                                              className={`px-2 py-1 rounded-full text-[11px] font-semibold border ${referralTargetDept === d ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-gray-600 border-gray-300'}`}
+                                          >
+                                            {d}
+                                          </button>
+                                      ))}
+                                    </div>
+                                    <textarea
+                                        value={referralReason}
+                                        onChange={(e) => setReferralReason(e.target.value)}
+                                        placeholder="Reason for referral / question for the specialist..."
+                                        rows={2}
+                                        className="w-full border rounded-lg px-2 py-1.5 text-sm"
+                                    />
+                                    <button
+                                        onClick={() => addReferral(activePatient)}
+                                        disabled={!referralTargetDept || !referralReason.trim()}
+                                        className="w-full bg-indigo-600 text-white py-1.5 rounded-lg text-xs font-bold disabled:opacity-40"
+                                    >
+                                      Send Referral to {referralTargetDept || '...'}
+                                    </button>
+                                  </div>
+                              )}
+
+                              {(activePatient.referrals || []).length === 0 ? (
+                                  <p className="text-xs text-gray-400 italic">No referrals sent.</p>
+                              ) : (
+                                  <div className="space-y-2">
+                                    {activePatient.referrals.map(ref => (
+                                        <div key={ref.id} className="border rounded-lg p-2.5 bg-gray-50">
+                                          <div className="flex justify-between items-start mb-1">
+                                            <span className="text-xs font-bold text-gray-800">{ref.toDept}</span>
+                                            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${
+                                                ref.status === 'Pending' ? 'bg-yellow-100 text-yellow-700' :
+                                                    ref.status === 'Answered' ? 'bg-green-100 text-green-700' :
+                                                        ref.status === 'Transfer Recommended' ? 'bg-red-100 text-red-700' :
+                                                            'bg-blue-100 text-blue-700'
+                                            }`}>
+                                              {ref.status}
+                                            </span>
+                                          </div>
+                                          <p className="text-[11px] text-gray-600 mb-1">{ref.reason}</p>
+                                          {ref.advice && (
+                                              <p className="text-[11px] text-indigo-700 bg-white border border-indigo-100 rounded p-1.5 mb-1"><b>Advice:</b> {ref.advice}</p>
+                                          )}
+
+                                          {ref.status === 'Pending' && (
+                                              <div className="space-y-1.5 mt-1.5">
+                                                <textarea
+                                                    value={referralAdviceInputs[ref.id] || ''}
+                                                    onChange={(e) => setReferralAdviceInputs(prev => ({ ...prev, [ref.id]: e.target.value }))}
+                                                    placeholder={`Reply as ${ref.toDept} specialist...`}
+                                                    rows={2}
+                                                    className="w-full border rounded-lg px-2 py-1 text-xs"
+                                                />
+                                                <div className="flex gap-1.5">
+                                                  <button onClick={() => sendReferralAdvice(activePatient, ref.id)} className="flex-1 bg-green-600 text-white py-1 rounded text-[11px] font-semibold">Send Advice</button>
+                                                  <button onClick={() => recommendReferralTransfer(activePatient, ref.id)} className="flex-1 bg-red-600 text-white py-1 rounded text-[11px] font-semibold">Recommend Transfer</button>
+                                                </div>
+                                              </div>
+                                          )}
+
+                                          {ref.status === 'Transfer Recommended' && (
+                                              <div className="flex gap-1.5 mt-1.5">
+                                                <button onClick={() => acceptReferralTransfer(activePatient, ref.id)} className="flex-1 bg-red-600 text-white py-1 rounded text-[11px] font-semibold">Accept & Transfer to {ref.toDept}</button>
+                                                <button onClick={() => dismissReferralTransfer(activePatient, ref.id)} className="flex-1 bg-gray-200 text-gray-700 py-1 rounded text-[11px] font-semibold">Keep Here</button>
+                                              </div>
+                                          )}
+                                        </div>
+                                    ))}
                                   </div>
                               )}
                             </div>
@@ -3308,6 +3877,57 @@ ${patient.followUpAdvice ? `
                                           <input type="file" accept="image/*" capture="environment" onChange={handleImageUpload} className="hidden" />
                                         </label>
                                       </div>
+
+                                    <div className="p-4 border-b bg-gray-50">
+                                      <div className="flex items-center justify-between mb-2">
+                                        <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider">
+                                          Manual History & Symptoms/Complaint
+                                        </label>
+                                        <button
+                                            type="button"
+                                            onClick={startVoiceInput}
+                                            className={`flex items-center gap-1 text-xs px-2.5 py-1 rounded-full border ${isListening ? 'bg-red-100 text-red-700 border-red-300 animate-pulse' : 'bg-white text-gray-600 border-gray-300 hover:border-indigo-300'}`}
+                                        >
+                                          <Mic size={12}/> {isListening ? 'Listening...' : 'Voice Input'}
+                                        </button>
+                                      </div>
+
+                                      <textarea
+                                          value={manualHistory}
+                                          onChange={(e) => setManualHistory(e.target.value)}
+                                          placeholder='e.g. "Fever x 3 days, low grade, no chills. Worsening cough since yesterday."'
+                                          rows={3}
+                                          className="w-full border border-gray-300 rounded-lg p-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 mb-3"
+                                      />
+
+                                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                        <div>
+                                          <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">
+                                            Previous History (Past Illness/Surgery/Medications)
+                                          </label>
+                                          <textarea
+                                              value={previousHistory}
+                                              onChange={(e) => setPreviousHistory(e.target.value)}
+                                              placeholder='e.g. "K/C/O Diabetes x 5 yrs on Metformin, prior appendectomy 2019"'
+                                              rows={2}
+                                              className="w-full border border-gray-300 rounded-lg p-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                                          />
+                                        </div>
+                                        <div>
+                                          <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">
+                                            Family History
+                                          </label>
+                                          <textarea
+                                              value={familyHistory}
+                                              onChange={(e) => setFamilyHistory(e.target.value)}
+                                              placeholder='e.g. "Father - HTN, Mother - Diabetes"'
+                                              rows={2}
+                                              className="w-full border border-gray-300 rounded-lg p-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                                          />
+                                        </div>
+                                      </div>
+                                    </div>
+
                                     </div>
 
                                     {selectedSymptoms.length > 0 && (
@@ -3360,29 +3980,6 @@ ${patient.followUpAdvice ? `
                                           </div>
                                         </div>
                                     )}
-
-                                    <div className="p-4 border-b bg-gray-50">
-                                      <div className="flex items-center justify-between mb-2">
-                                        <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider">
-                                          Manual History & Symptoms/Complaint
-                                        </label>
-                                        <button
-                                            type="button"
-                                            onClick={startVoiceInput}
-                                            className={`flex items-center gap-1 text-xs px-2.5 py-1 rounded-full border ${isListening ? 'bg-red-100 text-red-700 border-red-300 animate-pulse' : 'bg-white text-gray-600 border-gray-300 hover:border-indigo-300'}`}
-                                        >
-                                          <Mic size={12}/> {isListening ? 'Listening...' : 'Voice Input'}
-                                        </button>
-                                      </div>
-
-                                      <textarea
-                                          value={manualHistory}
-                                          onChange={(e) => setManualHistory(e.target.value)}
-                                          placeholder='e.g. "Fever x 3 days, low grade, no chills. Worsening cough since yesterday."'
-                                          rows={3}
-                                          className="w-full border border-gray-300 rounded-lg p-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
-                                      />
-                                    </div>
 
                                     <input
                                         type="text"
@@ -3666,6 +4263,16 @@ ${patient.followUpAdvice ? `
                                     <div className="bg-gray-50 rounded-lg p-4 border">
                                       <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Manual History/Compalint</h4>
                                       <p className="text-sm text-gray-800">{manualHistory || 'Not documented'}</p>
+                                    </div>
+
+                                    <div className="bg-gray-50 rounded-lg p-4 border">
+                                      <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Previous History</h4>
+                                      <p className="text-sm text-gray-800">{previousHistory || 'Not documented'}</p>
+                                    </div>
+
+                                    <div className="bg-gray-50 rounded-lg p-4 border">
+                                      <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Family History</h4>
+                                      <p className="text-sm text-gray-800">{familyHistory || 'Not documented'}</p>
                                     </div>
 
                                     <div className="bg-gray-50 rounded-lg p-4 border">
@@ -4108,7 +4715,7 @@ ${patient.followUpAdvice ? `
 
                                       </button>
                                       <button onClick={finishConsultation} className="bg-green-600 text-white px-8 py-2.5 rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-green-700 transition-colors shadow-sm">
-                                        <CheckCircle2 size={18}/> Send to Pharmacy/IPD
+                                        <CheckCircle2 size={18}/> Send to Pharmacy / Admission Desk
                                       </button>
                                     </div>
                                   </div>
@@ -4144,13 +4751,47 @@ ${patient.followUpAdvice ? `
                           className="w-full outline-none text-sm"
                       />
                     </div>
-                    {patients.filter(p => p.status === 'IPD' && matchesSearch(p, ipdSearch)).length === 0 ? (
+
+                    <div className="bg-white p-3 rounded-xl border shadow-sm space-y-2">
+                      <div className="flex items-center gap-2">
+                        <BedDouble size={16} className="text-gray-400 shrink-0"/>
+                        <input
+                            type="text"
+                            value={ipdWardSearch}
+                            onChange={(e) => setIpdWardSearch(e.target.value)}
+                            placeholder="Search ward..."
+                            className="w-full outline-none text-sm"
+                        />
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                            onClick={() => setIpdWardFilter('All')}
+                            className={`px-3 py-1.5 rounded-full text-xs font-semibold border ${ipdWardFilter === 'All' ? 'bg-red-600 text-white border-red-600' : 'bg-white text-gray-600 border-gray-300 hover:border-red-300'}`}
+                        >
+                          All Wards
+                        </button>
+                        {getWardStats()
+                            .filter(w => w.name.toLowerCase().includes(ipdWardSearch.trim().toLowerCase()))
+                            .map(w => (
+                                <button
+                                    key={w.name}
+                                    onClick={() => setIpdWardFilter(w.name)}
+                                    className={`px-3 py-1.5 rounded-full text-xs font-semibold border flex items-center gap-1.5 ${ipdWardFilter === w.name ? 'bg-red-600 text-white border-red-600' : 'bg-white text-gray-600 border-gray-300 hover:border-red-300'}`}
+                                >
+                                  {w.name}
+                                  <span className={`text-[10px] ${ipdWardFilter === w.name ? 'text-red-100' : 'text-gray-400'}`}>({w.occupied}/{w.capacity})</span>
+                                </button>
+                            ))}
+                      </div>
+                    </div>
+
+                    {patients.filter(p => p.status === 'IPD' && matchesSearch(p, ipdSearch) && (ipdWardFilter === 'All' || p.ward === ipdWardFilter)).length === 0 ? (
                         <div className="bg-white p-8 rounded-xl border text-center text-gray-400">
                           No matching admitted patients.
                         </div>
                     ) : (
-                        patients.filter(p => p.status === 'IPD' && matchesSearch(p, ipdSearch)).map(p => (
 
+                        patients.filter(p => p.status === 'IPD' && matchesSearch(p, ipdSearch) && (ipdWardFilter === 'All' || p.ward === ipdWardFilter)).map(p => (
 
                             <div key={p.id} className="bg-white p-4 rounded-xl border shadow-sm">
                               <div className="flex justify-between items-start">
@@ -4159,27 +4800,66 @@ ${patient.followUpAdvice ? `
                                   <p className="text-xs text-gray-500">{p.uhid}</p>
                                   <p className="text-sm text-indigo-700 font-medium mt-1">{(p.diagnoses || []).join(', ')}</p>
                                 </div>
-                                <span className="text-[10px] font-bold px-2 py-1 rounded-full bg-red-100 text-red-700 border border-red-200">ADMITTED</span>
+                                <div className="flex flex-col items-end gap-1">
+
+                                  <span className="text-[10px] font-bold px-2 py-1 rounded-full bg-red-100 text-red-700 border border-red-200">ADMITTED</span>
+                                  {p.ward && <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">{p.ward}</span>}
+                                </div>
                               </div>
 
-                              <div className="mt-3">
-                                <h4 className="text-xs font-bold text-gray-400 uppercase mb-2">Day-wise Orders</h4>
+                              <button
+                                  onClick={() => toggleIpdExpanded(p.id)}
+                                  className="mt-3 text-xs font-semibold text-indigo-600 hover:text-indigo-800 flex items-center gap-1"
+                              >
+                                {ipdExpandedIds[p.id] ? '▲ Hide Details' : '▼ View Details (Orders, Investigations, Pharmacy Requests)'}
+                              </button>
+
+                              {ipdExpandedIds[p.id] && (
+                                  <>
+                                  <div className="mt-3">
+                                    <h4 className="text-xs font-bold text-gray-400 uppercase mb-2">Day-wise Orders</h4>
 
                                 {/* Day tabs */}
                                 <div className="flex flex-wrap gap-2 mb-3">
-                                  {(p.dailyOrders || []).map(day => (
-                                      <button
-                                          key={day.id}
-                                          onClick={() => setIpdActiveDayMap(prev => ({ ...prev, [p.id]: day.id }))}
-                                          className={`px-3 py-1.5 rounded-full text-xs font-semibold border ${
-                                              (ipdActiveDayMap[p.id] || (p.dailyOrders || [])[(p.dailyOrders || []).length - 1]?.id) === day.id
-                                                  ? 'bg-red-600 text-white border-red-600'
-                                                  : 'bg-white text-gray-600 border-gray-300 hover:border-red-300'
-                                          }`}
-                                      >
-                                        {day.label}{day.date ? ` (${day.date})` : ''}
-                                      </button>
-                                  ))}
+                                  {(p.dailyOrders || []).map(day => {
+                                    const isActive = (ipdActiveDayMap[p.id] || (p.dailyOrders || [])[(p.dailyOrders || []).length - 1]?.id) === day.id;
+                                    const isEditingDate = ipdEditingDateFor === day.id;
+                                    return (
+                                        <div key={day.id} className={`flex items-center rounded-full border overflow-hidden ${isActive ? 'bg-red-600 border-red-600' : 'bg-white border-gray-300'}`}>
+                                          <button
+                                              onClick={() => setIpdActiveDayMap(prev => ({ ...prev, [p.id]: day.id }))}
+                                              className={`px-3 py-1.5 text-xs font-semibold ${isActive ? 'text-white' : 'text-gray-600 hover:text-red-600'}`}
+                                          >
+                                            {day.label}
+                                          </button>
+                                          {isEditingDate ? (
+                                              <input
+                                                  type="text"
+                                                  defaultValue={day.date || ''}
+                                                  autoFocus
+                                                  onBlur={(e) => { updateIpdDayDate(p, day.id, e.target.value); setIpdEditingDateFor(null); }}
+                                                  onKeyDown={(e) => { if (e.key === 'Enter') { updateIpdDayDate(p, day.id, e.target.value); setIpdEditingDateFor(null); } }}
+                                                  className="text-xs px-1 py-1 w-24 border-l outline-none text-gray-800"
+                                              />
+                                          ) : (
+                                              <button
+                                                  onClick={() => setIpdEditingDateFor(day.id)}
+                                                  title="Edit date"
+                                                  className={`px-1.5 py-1.5 text-[11px] ${isActive ? 'text-red-100 hover:text-white' : 'text-gray-500 hover:text-red-600'}`}
+                                              >
+                                                {day.date || 'set date'}
+                                              </button>
+                                          )}
+                                          <button
+                                              onClick={() => removeIpdDay(p, day.id)}
+                                              title="Delete this day"
+                                              className={`px-2 py-1.5 text-xs font-bold ${isActive ? 'text-red-100 hover:text-white' : 'text-gray-400 hover:text-red-600'}`}
+                                          >
+                                            ×
+                                          </button>
+                                        </div>
+                                    );
+                                  })}
                                   <button
                                       onClick={() => addIpdDay(p)}
                                       className="px-3 py-1.5 rounded-full text-xs font-semibold border border-dashed border-gray-400 text-gray-600 hover:border-red-400 hover:text-red-600 flex items-center gap-1"
@@ -4197,9 +4877,10 @@ ${patient.followUpAdvice ? `
                                   return (
                                       <div className="border rounded-lg p-3 bg-gray-50 space-y-4">
 
-                                        {/* Vitals for this day — Multiple readings with time (uncontrolled, typing-safe) */}
+
+                                        {/* Vitals for this day — read-only (recorded by Nursing) */}
                                         <div>
-                                          <h5 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Vitals — {activeDay.label}</h5>
+                                          <h5 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Vitals — {activeDay.label} <span className="font-normal text-gray-400">(recorded by nursing staff)</span></h5>
                                           {(activeDay.vitalsLog || []).length === 0 ? (
                                               <p className="text-sm text-gray-400 italic mb-2">No readings recorded yet.</p>
                                           ) : (
@@ -4215,32 +4896,19 @@ ${patient.followUpAdvice ? `
                                                 ))}
                                               </div>
                                           )}
-                                          <div className="grid grid-cols-2 sm:grid-cols-6 gap-2">
-                                            <input type="text" placeholder="Time (08:00 AM)" defaultValue="" ref={(el) => setIpdVitalRef(p.id, 'time', el)} className="border rounded-lg px-2 py-2 text-sm focus:ring-2 focus:ring-red-400 outline-none" />
-                                            <input type="text" placeholder="BP (120/80)" defaultValue="" ref={(el) => setIpdVitalRef(p.id, 'bp', el)} className="border rounded-lg px-2 py-2 text-sm focus:ring-2 focus:ring-red-400 outline-none" />
-                                            <input type="text" placeholder="Pulse (78)" defaultValue="" ref={(el) => setIpdVitalRef(p.id, 'pulse', el)} className="border rounded-lg px-2 py-2 text-sm focus:ring-2 focus:ring-red-400 outline-none" />
-                                            <input type="text" placeholder="Temp (98.6)" defaultValue="" ref={(el) => setIpdVitalRef(p.id, 'temp', el)} className="border rounded-lg px-2 py-2 text-sm focus:ring-2 focus:ring-red-400 outline-none" />
-                                            <input type="text" placeholder="SpO2 (98)" defaultValue="" ref={(el) => setIpdVitalRef(p.id, 'spo2', el)} className="border rounded-lg px-2 py-2 text-sm focus:ring-2 focus:ring-red-400 outline-none" />
-                                            <button onClick={() => saveIpdDayVitals(p)} className="bg-red-600 text-white px-3 py-2 rounded-lg text-sm font-medium hover:bg-red-700">+ Add Reading</button>
-                                          </div>
                                         </div>
+
                                         {/* Medications for this day */}
 
                                         <div>
-                                          <h5 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Medications — {activeDay.label}</h5>
+                                          <h5 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Medications — {activeDay.label} <span className="font-normal text-gray-400">(given status set by nursing staff)</span></h5>
                                           {activeDay.meds.length === 0 ? (
                                               <p className="text-sm text-gray-400 italic mb-2">None added for this day.</p>
                                           ) : (
                                               <ul className="divide-y border rounded-lg bg-white mb-2">
                                                 {activeDay.meds.map(m => (
                                                     <li key={m.id} className={`flex items-center justify-between px-3 py-2 ${m.given ? 'bg-green-50' : ''}`}>
-                                                      <label className="flex items-center gap-2 flex-1 cursor-pointer">
-                                                        <input
-                                                            type="checkbox"
-                                                            checked={!!m.given}
-                                                            onChange={() => toggleIpdMedGiven(p, activeDay.id, m.id)}
-                                                            className="w-4 h-4 text-green-600 rounded focus:ring-green-500 shrink-0"
-                                                        />
+                                                      <div className="flex items-center gap-2 flex-1">
                                                         <span className={`text-sm ${m.given ? 'text-gray-400 line-through' : 'text-gray-800'}`}>
                                                           <span className="font-medium">{m.name}</span> — {m.dosage}, {m.duration}
                                                         </span>
@@ -4249,7 +4917,7 @@ ${patient.followUpAdvice ? `
                                                         ) : (
                                                             <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-yellow-100 text-yellow-700 shrink-0">Pending</span>
                                                         )}
-                                                      </label>
+                                                      </div>
                                                       <button
                                                           onClick={() => removeIpdMedication(p, activeDay.id, m.id)}
                                                           className="text-red-400 hover:text-red-600 p-1 shrink-0"
@@ -4455,10 +5123,30 @@ ${patient.followUpAdvice ? `
                                 </div>
                               </div>
 
+                              <div className="mt-4 border-t pt-4">
+                                <h5 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Pharmacy Drug Requests</h5>
+                                {(p.ipdDrugRequests || []).length === 0 ? (
+                                    <p className="text-sm text-gray-400 italic mb-2">No drug requests sent to pharmacy yet.</p>
+                                ) : (
+                                    <ul className="divide-y border rounded-lg bg-white mb-2">
+                                      {p.ipdDrugRequests.map(r => (
+                                          <li key={r.id} className="flex items-center justify-between px-3 py-2">
+                                            <span className="text-sm text-gray-800">{r.name} <span className="text-xs text-gray-400">({r.requestedAt})</span></span>
+                                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${r.status === 'Sent' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
+                                              {r.status === 'Sent' ? '✓ Dispensed by Pharmacy' : '⏳ Pending at Pharmacy'}
+                                            </span>
+                                          </li>
+                                      ))}
+                                    </ul>
+                                )}
+                              </div>
+                                  </>
+                              )}
 
                               <div className="mt-3 flex justify-end gap-2">
                                 <button
                                     onClick={() => { printIpdCasePaper(p); setIpdPrinted(prev => ({ ...prev, [p.id]: true })); }}
+
                                     className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-semibold"
                                 >
                                   🖨️ Print Case Paper
@@ -4477,7 +5165,276 @@ ${patient.followUpAdvice ? `
                     )}
                   </div>
               )}
+
+              {/* --- IPD NURSE TAB --- */}
+              {activeTab === 'ipd_nurse' && (
+                  <div className="max-w-4xl mx-auto space-y-4">
+                    <h2 className="text-xl font-bold text-gray-700">IPD Nursing — Vitals & Medication Status</h2>
+                    <div className="bg-white p-3 rounded-xl border shadow-sm flex items-center gap-2">
+                      <Search size={16} className="text-gray-400 shrink-0"/>
+                      <input
+                          type="text"
+                          value={ipdNurseSearch}
+                          onChange={(e) => setIpdNurseSearch(e.target.value)}
+                          placeholder="Search by UHID or patient name..."
+                          className="w-full outline-none text-sm"
+                      />
+                    </div>
+
+                    <div className="bg-white p-3 rounded-xl border shadow-sm flex flex-wrap gap-2 items-center">
+                      <span className="text-xs font-semibold text-gray-500 uppercase px-2">Ward:</span>
+                      <button
+                          onClick={() => setIpdNurseWardFilter('All')}
+                          className={`px-3 py-1.5 rounded-full text-xs font-semibold border ${ipdNurseWardFilter === 'All' ? 'bg-red-600 text-white border-red-600' : 'bg-white text-gray-600 border-gray-300 hover:border-red-300'}`}
+                      >
+                        All Wards
+                      </button>
+                      {getWardStats().map(w => (
+                          <button
+                              key={w.name}
+                              onClick={() => setIpdNurseWardFilter(w.name)}
+                              className={`px-3 py-1.5 rounded-full text-xs font-semibold border flex items-center gap-1.5 ${ipdNurseWardFilter === w.name ? 'bg-red-600 text-white border-red-600' : 'bg-white text-gray-600 border-gray-300 hover:border-red-300'}`}
+                          >
+                            {w.name}
+                            <span className={`text-[10px] ${ipdNurseWardFilter === w.name ? 'text-red-100' : 'text-gray-400'}`}>({w.occupied}/{w.capacity})</span>
+                          </button>
+                      ))}
+                    </div>
+
+                    {patients.filter(p => p.status === 'IPD' && matchesSearch(p, ipdNurseSearch) && (ipdNurseWardFilter === 'All' || p.ward === ipdNurseWardFilter)).length === 0 ? (
+                        <div className="bg-white p-8 rounded-xl border text-center text-gray-400">No matching admitted patients.</div>
+                    ) : (
+                        patients.filter(p => p.status === 'IPD' && matchesSearch(p, ipdNurseSearch) && (ipdNurseWardFilter === 'All' || p.ward === ipdNurseWardFilter)).map(p => {
+                          const activeDay = getActiveIpdDay(p);
+                          return (
+                              <div key={p.id} className="bg-white p-4 rounded-xl border shadow-sm space-y-4">
+                                <div className="flex justify-between items-start">
+                                  <div>
+                                    <h3 className="font-bold">{p.name} <span className="text-sm text-gray-500">({p.age}, {p.gender})</span></h3>
+                                    <p className="text-xs text-gray-500">{p.uhid} • {p.department}{p.ward ? ` • ${p.ward}` : ''}</p>
+                                    <p className="text-sm text-indigo-700 font-medium mt-1">{(p.diagnoses || []).join(', ')}</p>
+                                  </div>
+                                  <span className="text-[10px] font-bold px-2 py-1 rounded-full bg-red-100 text-red-700 border border-red-200">ADMITTED</span>
+                                </div>
+
+                                {/* Chief complaint / history reference */}
+                                <div className="bg-gray-50 rounded-lg p-3 text-xs text-gray-700 space-y-1">
+                                  <p><b>Chief Complaint:</b> {p.complaint || 'Not recorded'}</p>
+                                  <p><b>Symptoms:</b> {(p.savedSymptoms || []).map(s => s.name).join(', ') || 'Not recorded'}</p>
+                                </div>
+
+                                {!activeDay ? (
+                                    <p className="text-sm text-gray-400 italic">No day-wise orders yet from IPD Doctor.</p>
+                                ) : (
+                                    <>
+                                      {/* Vitals — full editing rights for nurse */}
+                                      <div>
+                                        <h5 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Record Vitals — {activeDay.label}</h5>
+                                        {(activeDay.vitalsLog || []).length === 0 ? (
+                                            <p className="text-sm text-gray-400 italic mb-2">No readings recorded yet.</p>
+                                        ) : (
+                                            <div className="space-y-1.5 mb-2">
+                                              {activeDay.vitalsLog.map(v => (
+                                                  <div key={v.id} className="grid grid-cols-5 gap-2 bg-gray-50 border rounded-lg p-2 items-center">
+                                                    <div><p className="text-[10px] text-gray-400">Time</p><p className="text-sm font-bold text-red-600">{v.time}</p></div>
+                                                    <div><p className="text-[10px] text-gray-400">BP</p><p className="text-sm font-semibold">{v.bp}</p></div>
+                                                    <div><p className="text-[10px] text-gray-400">Pulse</p><p className="text-sm font-semibold">{v.pulse}</p></div>
+                                                    <div><p className="text-[10px] text-gray-400">Temp</p><p className="text-sm font-semibold">{v.temp}</p></div>
+                                                    <div><p className="text-[10px] text-gray-400">SpO2</p><p className="text-sm font-semibold">{v.spo2}</p></div>
+                                                  </div>
+                                              ))}
+                                            </div>
+                                        )}
+                                        <div className="grid grid-cols-2 sm:grid-cols-6 gap-2">
+                                          <input type="text" placeholder="Time (08:00 AM)" defaultValue="" ref={(el) => setIpdVitalRef(p.id, 'time', el)} className="border rounded-lg px-2 py-2 text-sm focus:ring-2 focus:ring-red-400 outline-none" />
+                                          <input type="text" placeholder="BP (120/80)" defaultValue="" ref={(el) => setIpdVitalRef(p.id, 'bp', el)} className="border rounded-lg px-2 py-2 text-sm focus:ring-2 focus:ring-red-400 outline-none" />
+                                          <input type="text" placeholder="Pulse (78)" defaultValue="" ref={(el) => setIpdVitalRef(p.id, 'pulse', el)} className="border rounded-lg px-2 py-2 text-sm focus:ring-2 focus:ring-red-400 outline-none" />
+                                          <input type="text" placeholder="Temp (98.6)" defaultValue="" ref={(el) => setIpdVitalRef(p.id, 'temp', el)} className="border rounded-lg px-2 py-2 text-sm focus:ring-2 focus:ring-red-400 outline-none" />
+                                          <input type="text" placeholder="SpO2 (98)" defaultValue="" ref={(el) => setIpdVitalRef(p.id, 'spo2', el)} className="border rounded-lg px-2 py-2 text-sm focus:ring-2 focus:ring-red-400 outline-none" />
+                                          <button onClick={() => saveIpdDayVitals(p)} className="bg-red-600 text-white px-3 py-2 rounded-lg text-sm font-medium hover:bg-red-700">+ Add Reading</button>
+                                        </div>
+                                      </div>
+
+                                      {/* Medication given/pending — nurse marks status, cannot add/remove */}
+                                      <div>
+                                        <h5 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Medications — {activeDay.label} <span className="font-normal text-gray-400">(mark as given after administration)</span></h5>
+                                        {activeDay.meds.length === 0 ? (
+                                            <p className="text-sm text-gray-400 italic mb-2">No medications ordered by doctor yet.</p>
+                                        ) : (
+                                            <ul className="divide-y border rounded-lg bg-white mb-2">
+                                              {activeDay.meds.map(m => (
+                                                  <li key={m.id} className={`flex items-center justify-between px-3 py-2 ${m.given ? 'bg-green-50' : ''}`}>
+                                                    <label className="flex items-center gap-2 flex-1 cursor-pointer">
+                                                      <input
+                                                          type="checkbox"
+                                                          checked={!!m.given}
+                                                          onChange={() => toggleIpdMedGiven(p, activeDay.id, m.id)}
+                                                          className="w-4 h-4 text-green-600 rounded focus:ring-green-500 shrink-0"
+                                                      />
+                                                      <span className={`text-sm ${m.given ? 'text-gray-400 line-through' : 'text-gray-800'}`}>
+                                                        <span className="font-medium">{m.name}</span> — {m.dosage}, {m.duration}
+                                                      </span>
+                                                      {m.given ? (
+                                                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 shrink-0">Given</span>
+                                                      ) : (
+                                                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-yellow-100 text-yellow-700 shrink-0">Pending</span>
+                                                      )}
+                                                    </label>
+                                                  </li>
+                                              ))}
+                                            </ul>
+                                        )}
+                                      </div>
+
+                                      {/* Advice — read only reference */}
+                                      <div>
+                                        <h5 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Doctor's Advice — {activeDay.label}</h5>
+                                        {(activeDay.advice || []).length === 0 ? (
+                                            <p className="text-sm text-gray-400 italic">None.</p>
+                                        ) : (
+                                            <ul className="text-sm text-gray-700 list-disc pl-5 space-y-1">
+                                              {activeDay.advice.map(a => <li key={a.id}>{a.text}</li>)}
+                                            </ul>
+                                        )}
+                                      </div>
+                                    </>
+                                )}
+
+                                {/* Drug request to Pharmacy */}
+                                <div className="border-t pt-3">
+                                  <h5 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Request Drug from Pharmacy</h5>
+                                  {(p.ipdDrugRequests || []).length > 0 && (
+                                      <ul className="divide-y border rounded-lg bg-white mb-2">
+                                        {p.ipdDrugRequests.map(r => (
+                                            <li key={r.id} className="flex items-center justify-between px-3 py-2">
+                                              <span className="text-sm text-gray-800">{r.name} <span className="text-xs text-gray-400">({r.requestedAt})</span></span>
+                                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${r.status === 'Sent' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
+                                                {r.status === 'Sent' ? '✓ Sent by Pharmacy' : '⏳ Pending'}
+                                              </span>
+                                            </li>
+                                        ))}
+                                      </ul>
+                                  )}
+                                  <div className="flex gap-2">
+                                    <input
+                                        type="text"
+                                        placeholder="e.g., Inj. Ceftriaxone 1g, IV Fluid NS 500ml"
+                                        value={ipdDrugRequestInputs[p.id] || ''}
+                                        onChange={(e) => setIpdDrugRequestInputs(prev => ({ ...prev, [p.id]: e.target.value }))}
+                                        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); requestIpdDrugFromPharmacy(p); } }}
+                                        className="flex-1 border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-red-400 outline-none"
+                                    />
+                                    <button onClick={() => requestIpdDrugFromPharmacy(p)} className="bg-red-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-red-700 flex items-center gap-1">
+                                      <Plus size={16}/> Send to Pharmacy
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+                          );
+                        })
+                    )}
+                  </div>
+              )}
+
+
+              {/* --- ADMISSION REQUEST MODAL (Doctor -> Admission Desk) --- */}
+              {showAdmissionRequestModal && activePatient && (
+                  <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
+                      <div>
+                        <h3 className="text-lg font-bold text-gray-900">Send to Admission Desk</h3>
+                        <p className="text-xs text-gray-500">{activePatient.name} — {activePatient.uhid}</p>
+                        <p className="text-xs text-gray-400 mt-1">Reception will complete billing/package formalities and assign a ward.</p>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-700 mb-1.5 uppercase tracking-wide">Procedure / Reason for Admission</label>
+                        <textarea
+                            value={admissionProcedureText}
+                            onChange={(e) => setAdmissionProcedureText(e.target.value)}
+                            rows={3}
+                            placeholder="e.g., ORIF for open fracture, IV antibiotics for sepsis..."
+                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-red-400 outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-700 mb-1.5 uppercase tracking-wide">Expected Indoor Days</label>
+                        <input
+                            type="number"
+                            min="0"
+                            value={admissionExpectedDays}
+                            onChange={(e) => setAdmissionExpectedDays(e.target.value)}
+                            placeholder="e.g., 3"
+                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-red-400 outline-none"
+                        />
+                      </div>
+                      <div className="flex gap-2 pt-2">
+                        <button onClick={() => setShowAdmissionRequestModal(false)} className="flex-1 bg-white border text-gray-600 px-4 py-2.5 rounded-lg text-sm font-semibold hover:bg-gray-50">
+                          Cancel
+                        </button>
+                        <button
+                            onClick={() => completeConsultation('Admission', '')}
+                            className="flex-1 bg-red-600 text-white px-4 py-2.5 rounded-lg text-sm font-bold hover:bg-red-700"
+                        >
+                          Send to Admission Desk
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+              )}
+
+              {/* --- WARD SELECTION MODAL (Admission Desk assigns the ward) --- */}
+              {showWardModal && wardAdmissionPatient && (
+                  <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
+                      <div>
+                        <h3 className="text-lg font-bold text-gray-900">Select Ward for Admission</h3>
+                        <p className="text-xs text-gray-500">{wardAdmissionPatient.name} — {wardAdmissionPatient.uhid}</p>
+                      </div>
+
+                      {getWardStats().length === 0 ? (
+                          <p className="text-sm text-red-600">No wards configured. Please add wards from Settings first.</p>
+                      ) : (
+                          <div className="space-y-2">
+                            {getWardStats().map(w => (
+                                <button
+                                    key={w.name}
+                                    disabled={w.available <= 0}
+                                    onClick={() => setSelectedWardForAdmission(w.name)}
+                                    className={`w-full flex justify-between items-center px-4 py-3 rounded-lg border text-left ${
+                                        selectedWardForAdmission === w.name
+                                            ? 'bg-red-600 text-white border-red-600'
+                                            : w.available <= 0
+                                                ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
+                                                : 'bg-white text-gray-800 border-gray-300 hover:border-red-300'
+                                    }`}
+                                >
+                                  <span className="font-medium">{w.name}</span>
+                                  <span className={`text-xs font-bold ${selectedWardForAdmission === w.name ? 'text-white' : w.available <= 0 ? 'text-red-500' : 'text-green-600'}`}>
+                                    {w.available > 0 ? `${w.available} beds free` : 'FULL'}
+                                  </span>
+                                </button>
+                            ))}
+                          </div>
+                      )}
+
+                      <div className="flex gap-2 pt-2">
+                        <button onClick={() => { setShowWardModal(false); setWardAdmissionPatient(null); }} className="flex-1 bg-white border text-gray-600 px-4 py-2.5 rounded-lg text-sm font-semibold hover:bg-gray-50">
+                          Cancel
+                        </button>
+                        <button
+                            disabled={!selectedWardForAdmission}
+                            onClick={confirmWardAdmission}
+                            className="flex-1 bg-red-600 text-white px-4 py-2.5 rounded-lg text-sm font-bold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-red-700"
+                        >
+                          Confirm Admission
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+              )}
+
               {/* --- DISCHARGE MODAL --- */}
+
               {showDischargeModal && dischargePatient && (
                   <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
                     <div className="bg-white rounded-2xl max-w-2xl w-full shadow-2xl flex flex-col max-h-[90vh]">
@@ -4775,11 +5732,55 @@ ${patient.followUpAdvice ? `
 
               {/* --- REVIEW TAB (Placeholder) --- */}
 
+              {/* --- MO FINAL REVIEW TAB --- */}
               {activeTab === 'review' && (
-                  <div className="flex flex-col items-center justify-center h-full text-gray-400 space-y-4 max-w-md mx-auto text-center">
-                    <ClipboardCheck size={64} className="text-green-200"/>
-                    <h2 className="text-xl font-bold text-gray-700">Final Medical Review</h2>
-                    <p className="text-sm">This module is part of the extended EHR suite. It allows for discharge summaries.</p>
+                  <div className="max-w-4xl mx-auto space-y-4">
+                    <div className="bg-white p-4 rounded-xl border shadow-sm">
+                      <h3 className="text-lg font-bold text-gray-800">MO Final Review — Print & Discharge</h3>
+                      <p className="text-xs text-gray-500">OPD patients print their final case paper here; IPD patients print their discharge summary here. This is the only print/exit point.</p>
+                    </div>
+
+                    {patients.filter(p => p.status === 'Review').length === 0 ? (
+                        <div className="bg-white p-10 rounded-xl border border-dashed border-gray-300 text-center text-gray-500">
+                          <ClipboardCheck className="w-12 h-12 mx-auto text-gray-300 mb-3"/>
+                          <p className="font-medium">No patients pending final review.</p>
+                        </div>
+                    ) : (
+                        patients.filter(p => p.status === 'Review').map(p => (
+                            <div key={p.id} className="bg-white p-4 rounded-xl border shadow-sm flex justify-between items-center">
+                              <div>
+                                <h4 className="font-bold text-gray-900">{p.name} <span className="text-sm text-gray-500">({p.age}, {p.gender})</span></h4>
+                                <p className="text-xs text-gray-500">{p.uhid} • {p.department}</p>
+                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full mt-1 inline-block ${p.admittedAt ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}>
+                                  {p.admittedAt ? 'IPD Discharge' : 'OPD Exit'}
+                                </span>
+                              </div>
+                              <div className="flex gap-2">
+                                {p.admittedAt ? (
+                                    <button
+                                        onClick={() => printDischargeSummary(p)}
+                                        className="bg-blue-600 text-white px-4 py-2.5 rounded-lg text-sm font-semibold flex items-center gap-2"
+                                    >
+                                      🖨️ Print Discharge Summary
+                                    </button>
+                                ) : (
+                                    <button
+                                        onClick={() => printPrescription(p)}
+                                        className="bg-blue-600 text-white px-4 py-2.5 rounded-lg text-sm font-semibold flex items-center gap-2"
+                                    >
+                                      🖨️ Print Final OPD Paper
+                                    </button>
+                                )}
+                                <button
+                                    onClick={() => markAsDischarged(p)}
+                                    className="bg-green-600 text-white px-4 py-2.5 rounded-lg text-sm font-semibold flex items-center gap-2"
+                                >
+                                  <CheckCircle2 size={16}/> Mark Discharged
+                                </button>
+                              </div>
+                            </div>
+                        ))
+                    )}
                   </div>
               )}
 
@@ -4806,6 +5807,27 @@ ${patient.followUpAdvice ? `
                           className="w-full outline-none text-sm"
                       />
                     </div>
+
+                    {patients.filter(p => p.status === 'IPD' && (p.ipdDrugRequests || []).some(r => r.status === 'Pending')).length > 0 && (
+                        <div className="bg-white p-4 rounded-xl border-2 border-red-200 shadow-sm space-y-3">
+                          <h3 className="text-sm font-bold text-red-700 uppercase tracking-wider">IPD Drug Requests — Pending</h3>
+                          {patients.filter(p => p.status === 'IPD' && (p.ipdDrugRequests || []).some(r => r.status === 'Pending')).map(p => (
+                              <div key={p.id} className="border rounded-lg p-3 bg-red-50">
+                                <p className="text-sm font-semibold text-gray-800 mb-2">{p.name} <span className="text-xs text-gray-500">({p.uhid})</span></p>
+                                <ul className="space-y-1.5">
+                                  {(p.ipdDrugRequests || []).filter(r => r.status === 'Pending').map(r => (
+                                      <li key={r.id} className="flex items-center justify-between bg-white rounded-lg px-3 py-2 border">
+                                        <span className="text-sm text-gray-700">{r.name}</span>
+                                        <button onClick={() => markIpdDrugRequestSent(p, r.id)} className="bg-green-600 text-white text-xs px-3 py-1.5 rounded-lg font-semibold hover:bg-green-700">
+                                          Mark as Sent
+                                        </button>
+                                      </li>
+                                  ))}
+                                </ul>
+                              </div>
+                          ))}
+                        </div>
+                    )}
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
 
@@ -4920,48 +5942,39 @@ ${patient.followUpAdvice ? `
 
                                 <div className="p-0 flex-1">
                                   <ul className="divide-y">
-                                    {p.prescriptions && p.prescriptions.length > 0 ? p.prescriptions.map((med, idx) => (
-                                        <li key={med.id || idx}
-                                            className="p-3 px-4 hover:bg-slate-50 flex items-center justify-between">
-                                          <div>
-                                            <h5 className="font-bold text-sm text-gray-800">{med.name}</h5>
-                                            <p className="text-xs text-gray-500 mt-0.5"><span
-                                                className="font-semibold text-gray-700">{med.dosage}</span> for {med.duration}
-                                            </p>
-                                          </div>
-                                          <input type="checkbox"
-                                                 className="w-5 h-5 text-purple-600 rounded border-gray-300 focus:ring-purple-500"
-                                                 defaultChecked/>
-                                        </li>
-                                    )) : (
-                                        <li className="p-4 text-sm text-gray-500 italic">No medications prescribed.</li>
-                                    )}
+                                    {(() => {
+                                      const pendingMeds = getPendingPharmacyMeds(p);
+                                      if (pendingMeds.length === 0) {
+                                        return (
+                                            <li className="p-4 text-sm text-gray-500 italic">
+                                              {p.admittedAt ? 'All medications were already given during admission.' : 'No medications prescribed.'}
+                                            </li>
+                                        );
+                                      }
+                                      return pendingMeds.map((med, idx) => (
+                                          <li key={med.id || idx}
+                                              className="p-3 px-4 hover:bg-slate-50 flex items-center justify-between">
+                                            <div>
+                                              <h5 className="font-bold text-sm text-gray-800">{med.name}</h5>
+                                              <p className="text-xs text-gray-500 mt-0.5"><span
+                                                  className="font-semibold text-gray-700">{med.dosage}</span> for {med.duration}
+                                              </p>
+                                            </div>
+                                            <input type="checkbox"
+                                                   className="w-5 h-5 text-purple-600 rounded border-gray-300 focus:ring-purple-500"
+                                                   defaultChecked/>
+                                          </li>
+                                      ));
+                                    })()}
                                   </ul>
                                 </div>
 
                                 <div className="p-4 bg-white border-t flex justify-end gap-2">
-                                  {p.admittedAt ? (
-                                      // Aa patient IPD thi aavelu che — doctor e already discharge summary confirm kari didhi hase
-                                      <button
-                                          onClick={() => printDischargeSummary(p)}
-                                          className="bg-gray-700 text-white px-4 py-2.5 rounded-lg text-sm font-semibold flex items-center gap-2"
-                                      >
-                                        🖨️ Print Discharge Summary
-                                      </button>
-                                  ) : (
-                                      // Normal OPD patient — sāme che pahela ni jem
-                                      <button
-                                          onClick={() => printPrescription(p)}
-                                          className="bg-gray-700 text-white px-4 py-2.5 rounded-lg text-sm font-semibold flex items-center gap-2"
-                                      >
-                                        🖨️ Print
-                                      </button>
-                                  )}
                                   <button
                                       onClick={() => dispenseMedication(p.id)}
                                       className="bg-purple-600 text-white px-5 py-2.5 rounded-lg text-sm font-semibold flex items-center gap-2"
                                   >
-                                    <Check size={18}/> Dispense & Complete
+                                    <Check size={18}/> Dispense & Send to MO Review
                                   </button>
                                 </div>
 
@@ -5057,8 +6070,39 @@ ${patient.followUpAdvice ? `
                             </div>
                         )}
                       </div>
-                      <p className="text-xs text-gray-400">This information appears on all printed prescriptions and bills.</p>
+                      <div className="border-t pt-4">
+                        <label className="text-xs font-semibold text-gray-700 uppercase block mb-2">Ward Management</label>
+                        {(hospitalInfo.wards || []).length === 0 ? (
+                            <p className="text-sm text-gray-400 italic mb-2">No wards configured yet.</p>
+                        ) : (
+                            <ul className="divide-y border rounded-lg bg-gray-50 mb-3">
+                              {getWardStats().map(w => (
+                                  <li key={w.name} className="flex items-center justify-between px-3 py-2">
+                                    <div>
+                                      <span className="font-medium text-gray-800">{w.name}</span>
+                                      <span className="text-xs text-gray-500 ml-2">Capacity: {w.capacity}</span>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                      <span className={`text-[10px] font-bold px-2 py-1 rounded-full ${w.available > 0 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                                        {w.occupied} / {w.capacity} occupied
+                                      </span>
+                                      <button onClick={() => removeWard(w.name)} className="text-red-400 hover:text-red-600 p-1">
+                                        <Trash2 size={14}/>
+                                      </button>
+                                    </div>
+                                  </li>
+                              ))}
+                            </ul>
+                        )}
+                        <div className="flex gap-2">
+                          <input type="text" placeholder="Ward name (e.g., Male Ward)" value={newWardName} onChange={(e) => setNewWardName(e.target.value)} className="flex-1 border rounded-lg px-3 py-2 text-sm" />
+                          <input type="number" placeholder="Total beds" value={newWardCapacity} onChange={(e) => setNewWardCapacity(e.target.value)} className="w-32 border rounded-lg px-3 py-2 text-sm" />
+                          <button onClick={addWard} className="bg-gray-800 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-900">+ Add Ward</button>
+                        </div>
+                        <p className="text-xs text-gray-400 mt-2">Total Wards: {(hospitalInfo.wards || []).length} • Total Capacity: {(hospitalInfo.wards || []).reduce((s, w) => s + w.capacity, 0)} beds</p>
+                      </div>
 
+                      <p className="text-xs text-gray-400">This information appears on all printed prescriptions and bills.</p>
                       <button
                           onClick={saveHospitalSettings}
                           className="w-full bg-indigo-600 text-white py-2.5 rounded-lg font-semibold hover:bg-indigo-700"
