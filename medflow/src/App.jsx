@@ -441,9 +441,10 @@ const SYMPTOMS_DB = [
 
 ];
 
+const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const DEPARTMENTS = [
   // General / Basic
-  'General Medicine', 'General Surgery', 'Orthopedic', 'Pediatrics',
+  'General Opd', 'General Medicine', 'General Surgery', 'Orthopedic', 'Pediatrics',
   'OBG & Gynec', 'ENT', 'Dermatology', 'Ophthalmology', 'Psychiatry',
   'Emergency Medicine', 'Anesthesia',
   // Specialist
@@ -493,6 +494,35 @@ const ROLE_TABS = {
   pharmacy: ['pharmacy'],
 };
 
+function DepartmentPickerButton({ selected, options, onSelect, placeholder = 'All' }) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState('');
+  return (
+      <div className="relative inline-block">
+        <button type="button" onClick={() => setOpen(o => !o)}
+                className="px-3 py-1.5 rounded-lg text-xs font-semibold border bg-white text-gray-700 border-gray-300 hover:border-indigo-400 flex items-center gap-1">
+          {selected || placeholder} <ChevronRight size={12} className={`transition-transform ${open ? 'rotate-90' : ''}`} />
+        </button>
+        {open && (
+            <div className="absolute z-30 mt-1 w-64 bg-white border rounded-xl shadow-lg p-2">
+              <input autoFocus value={q} onChange={e => setQ(e.target.value)}
+                     placeholder="Search department..." className="w-full border rounded-lg px-2 py-1.5 text-sm mb-2" />
+              <div className="max-h-56 overflow-y-auto space-y-1">
+                <button onClick={() => { onSelect('All'); setOpen(false); setQ(''); }}
+                        className="w-full text-left px-2 py-1.5 rounded-lg text-sm hover:bg-indigo-50">All</button>
+                {options.filter(d => d.toLowerCase().includes(q.trim().toLowerCase())).map(d => (
+                    <button key={d} onClick={() => { onSelect(d); setOpen(false); setQ(''); }}
+                            className={`w-full text-left px-2 py-1.5 rounded-lg text-sm hover:bg-indigo-50 ${selected === d ? 'bg-indigo-100 font-semibold text-indigo-700' : ''}`}>
+                      {d}
+                    </button>
+                ))}
+              </div>
+            </div>
+        )}
+      </div>
+  );
+}
+
 export default function MedFlowApp() {
 
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -516,6 +546,10 @@ export default function MedFlowApp() {
     email: "abcd@gmail.com",
     doctorSign: "/sign.png",
     wards: [],
+    logoLeft: "",
+    logoRight: "",
+    backgroundImage: "",
+    departments: [],
   });
 
   const updateHospitalInfo = (field, value) => {
@@ -535,7 +569,19 @@ export default function MedFlowApp() {
               contact: data.contact || '',
               email: data.email || '',
               doctorSign: data.doctor_sign || '',
+              logoLeft: data.logo_left || '',
+              logoRight: data.logo_right || '',
+              backgroundImage: data.background_image || '',
               wards: data.wards || [],
+
+              departments: (() => {
+                const saved = (data.departments && data.departments.length) ? data.departments : [];
+                const savedNames = saved.map(d => d.name);
+                const missing = DEPARTMENTS.filter(name => !savedNames.includes(name))
+                    .map(name => ({ name, active: false, doctorName: '', doctorSign: '' }));
+                return saved.length ? [...saved, ...missing] : DEPARTMENTS.map(name => ({ name, active: false, doctorName: '', doctorSign: '' }));
+              })(),
+
             });
           }
         });
@@ -551,7 +597,11 @@ export default function MedFlowApp() {
       contact: hospitalInfo.contact,
       email: hospitalInfo.email,
       doctor_sign: hospitalInfo.doctorSign,
+      logo_left: hospitalInfo.logoLeft,
+      logo_right: hospitalInfo.logoRight,
+      background_image: hospitalInfo.backgroundImage,
       wards: hospitalInfo.wards,
+      departments: hospitalInfo.departments,
     });
     if (error) alert('Could not save settings: ' + error.message);
     else alert('Settings saved successfully.');
@@ -570,8 +620,79 @@ export default function MedFlowApp() {
     setNewWardCapacity('');
   };
 
-  const removeWard = (wardName) => {
-    setHospitalInfo(prev => ({ ...prev, wards: (prev.wards || []).filter(w => w.name !== wardName) }));
+  // --- Multi-Doctor / Unit Management per Department ---
+  const addDeptDoctor = (deptIdx) => {
+    setHospitalInfo(prev => {
+      const depts = [...prev.departments];
+      const dept = depts[deptIdx];
+      const doctors = dept.doctors && dept.doctors.length > 0
+          ? [...dept.doctors]
+          : (dept.doctorName ? [{ name: dept.doctorName, sign: dept.doctorSign, days: [] }] : []);
+      doctors.push({ id: Date.now() + Math.random(), name: '', sign: '', days: [] });
+      depts[deptIdx] = { ...dept, doctors };
+      return { ...prev, departments: depts };
+    });
+  };
+
+  const updateDeptDoctor = (deptIdx, docIdx, field, value) => {
+    setHospitalInfo(prev => {
+      const depts = [...prev.departments];
+      const dept = depts[deptIdx];
+      const doctors = dept.doctors && dept.doctors.length > 0
+          ? [...dept.doctors]
+          : (dept.doctorName ? [{ name: dept.doctorName, sign: dept.doctorSign, days: [] }] : []);
+      doctors[docIdx] = { ...(doctors[docIdx] || {}), [field]: value };
+      depts[deptIdx] = { ...dept, doctors };
+      return { ...prev, departments: depts };
+    });
+  };
+
+  const toggleDeptDoctorDay = (deptIdx, docIdx, day) => {
+    setHospitalInfo(prev => {
+      const depts = [...prev.departments];
+      const dept = depts[deptIdx];
+      const doctors = dept.doctors && dept.doctors.length > 0
+          ? [...dept.doctors]
+          : (dept.doctorName ? [{ name: dept.doctorName, sign: dept.doctorSign, days: [] }] : []);
+      const currentDays = (doctors[docIdx] || {}).days || [];
+      const newDays = currentDays.includes(day) ? currentDays.filter(d => d !== day) : [...currentDays, day];
+      doctors[docIdx] = { ...(doctors[docIdx] || {}), days: newDays };
+      depts[deptIdx] = { ...dept, doctors };
+      return { ...prev, departments: depts };
+    });
+  };
+
+  const removeDeptDoctor = (deptIdx, docIdx) => {
+    setHospitalInfo(prev => {
+      const depts = [...prev.departments];
+      const dept = depts[deptIdx];
+      const doctors = (dept.doctors && dept.doctors.length > 0 ? dept.doctors : []).filter((_, i) => i !== docIdx);
+      depts[deptIdx] = { ...dept, doctors };
+      return { ...prev, departments: depts };
+    });
+  };
+  const getWatermarkHtml = () => {
+    if (!hospitalInfo.backgroundImage) return '';
+    return `
+      <div style="
+        position: fixed;
+        top: 0; left: 0; right: 0; bottom: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: -1;
+        pointer-events: none;
+      ">
+        <img src="${hospitalInfo.backgroundImage}" style="
+          width: 55%;
+          max-width: 400px;
+          opacity: 0.08;
+          object-fit: contain;
+          -webkit-print-color-adjust: exact;
+          print-color-adjust: exact;
+        " />
+      </div>
+    `;
   };
 
   const getWardStats = () => {
@@ -579,6 +700,36 @@ export default function MedFlowApp() {
       const occupied = patients.filter(p => p.status === 'IPD' && p.ward === w.name).length;
       return { ...w, occupied, available: Math.max(w.capacity - occupied, 0) };
     });
+  };
+
+  const activeDepartmentNames = (hospitalInfo.departments && hospitalInfo.departments.some(d => d.active))
+      ? hospitalInfo.departments.filter(d => d.active).map(d => d.name)
+      : DEPARTMENTS;
+
+  const getDeptInfo = (deptName) => {
+    const d = (hospitalInfo.departments || []).find(x => x.name === deptName);
+    if (!d) return { doctorName: hospitalInfo.doctorName, doctorSign: hospitalInfo.doctorSign };
+
+    // Juna single-doctor data (doctorName/doctorSign) ane nava multi-doctor (doctors array) — banne support
+    const doctorList = (d.doctors && d.doctors.length > 0)
+        ? d.doctors
+        : (d.doctorName ? [{ name: d.doctorName, sign: d.doctorSign, days: [] }] : []);
+
+    if (doctorList.length === 0) {
+      return { doctorName: hospitalInfo.doctorName, doctorSign: hospitalInfo.doctorSign };
+    }
+
+    const todayName = WEEKDAYS[new Date().getDay()];
+    // 1) aaje na day mate scheduled doctor, 2) je doctor e koi day fix na karyo hoy (hammesha on-duty), 3) list no pehlo doctor
+    const todaysDoctor = doctorList.find(doc => (doc.days || []).includes(todayName));
+    const alwaysOnDoctor = doctorList.find(doc => !doc.days || doc.days.length === 0);
+    const chosen = todaysDoctor || alwaysOnDoctor || doctorList[0];
+
+    return {
+      doctorName: chosen.name || hospitalInfo.doctorName,
+      doctorSign: chosen.sign || hospitalInfo.doctorSign,
+      allDoctors: doctorList,
+    };
   };
 
   const runExamSuggestionEngine = async () => {
@@ -602,6 +753,7 @@ Selected Clinical Findings & Symptoms: ${symNames || 'None selected'}.
 Doctor's Manual History: ${manualHistory || 'Not provided'}.
 Previous History (Past Illness/Surgery/Medications): ${previousHistory || 'Not provided'}.
 Family History: ${familyHistory || 'Not provided'}.
+Vitals: ${activePatient?.vitals ? `BP ${activePatient.vitals.bp} mmHg, Pulse ${activePatient.vitals.pulse} bpm, Temp ${activePatient.vitals.temp}°F, SpO2 ${activePatient.vitals.spo2}%` : 'Not recorded'}.
 
 Suggest:
 1. "negativeHistory" - relevant negative history points a doctor should ask/document to rule out differentials (e.g. "Denies hemoptysis", "No history of trauma").
@@ -857,6 +1009,34 @@ You MUST return your response as a valid JSON object matching exactly this schem
     }).join('; ');
   };
 
+  const splitLabResults = (labResultsStr) => {
+    if (!labResultsStr) return { previous: [], current: '' };
+    const parts = labResultsStr.split('; ').filter(Boolean);
+    return { previous: parts.slice(0, -1), current: parts[parts.length - 1] || '' };
+  };
+
+  const printLabValues = (patient, section, entries) => {
+    const combined = collectTestResults(patient.id, entries);
+    const printWindow = window.open('', '_blank');
+    printWindow.document.write(`
+          <html><head><title>Lab Report - ${patient.name}</title></head>
+          <body style="font-family: Arial, sans-serif; padding: 30px;">
+        <div style="display:flex; align-items:center; justify-content:center; gap:20px; border-bottom:2px solid #333; padding-bottom:10px; margin-bottom:20px;">
+          ${hospitalInfo.logo ? `<img src="${hospitalInfo.logo}" style="height:55px; object-fit:contain;" />` : ''}
+          <div style="text-align:center;">
+            <h2 style="margin:0;">${hospitalInfo.name}</h2>
+            <p style="margin:2px 0; font-size:13px;">${hospitalInfo.address}</p>
+          </div>
+          ${hospitalInfo.logo ? `<img src="${hospitalInfo.logo}" style="height:55px; object-fit:contain;" />` : ''}
+        </div>
+        <p><b>Patient:</b> ${patient.name} | <b>UHID:</b> ${patient.uhid} | <b>Age/Sex:</b> ${patient.age}/${patient.gender}</p>
+        <p><b>Section:</b> ${section === 'radiology' ? 'Radiology' : 'Diagnostic Lab'}</p><hr/>
+        <div style="white-space:pre-wrap; font-size:14px;">${combined.replace(/</g,'&lt;')}</div>
+        <br/><br/><p style="text-align:right;">Lab Technician Signature: ___________________</p>
+      </body></html>`);
+    printWindow.document.close();
+    printWindow.print();
+  };
 
   const sendLabSection = (patient, section) => {
     const invList = patient.investigationsOrdered && patient.investigationsOrdered.length > 0 ? patient.investigationsOrdered : ['General Test'];
@@ -876,12 +1056,15 @@ You MUST return your response as a valid JSON object matching exactly this schem
     const newCompletedTests = Array.from(new Set([...completed, ...entries.map(e => e.inv)]));
     const allDone = invList.every(inv => newCompletedTests.includes(inv));
     const newLabImages = section === 'radiology' ? [...(patient.labImages || []), ...images] : (patient.labImages || []);
-    const newStatus = allDone ? (patient.status === 'IPD' ? 'IPD' : 'Doctor') : patient.status;
+    const wasDischarged = patient.status === 'Discharged';
+    const newStatus = allDone
+        ? (patient.status === 'IPD' ? 'IPD' : (wasDischarged ? 'Discharged' : 'Doctor'))
+        : patient.status;
     const newLabStatus = allDone ? 'Completed' : 'Pending';
-
+    const newPendingDoctorReview = (allDone && wasDischarged) ? true : patient.pendingDoctorReview;
     setPatients(prev => prev.map(p => {
       if (p.id !== patient.id) return p;
-      return { ...p, labResults: newResults, labImages: newLabImages, completedTests: newCompletedTests, status: newStatus, labStatus: newLabStatus };
+      return { ...p, labResults: newResults, labImages: newLabImages, completedTests: newCompletedTests, status: newStatus, labStatus: newLabStatus, pendingDoctorReview: newPendingDoctorReview };
     }));
 
     updatePatientInDb(patient.dbId, {
@@ -889,6 +1072,7 @@ You MUST return your response as a valid JSON object matching exactly this schem
       completed_tests: newCompletedTests,
       status: newStatus,
       lab_status: newLabStatus,
+      pending_doctor_review: newPendingDoctorReview,
     });
 
     if (section === 'radiology') {
@@ -937,6 +1121,12 @@ You MUST return your response as a valid JSON object matching exactly this schem
     return (patient.name || '').toLowerCase().includes(q) ||
         (patient.uhid || '').toLowerCase().includes(q);
   };
+
+  const ipdPatientMatchesFilters = (p) => {
+    if (ipdDeptFilter !== 'All' && p.department !== ipdDeptFilter) return false;
+    if (ipdDoctorFilter !== 'All' && getDeptInfo(p.department).doctorName !== ipdDoctorFilter) return false;
+    return true;
+  };
   const [ipdPrinted, setIpdPrinted] = useState({});
 
   const printIpdCasePaper = (patient) => {
@@ -957,11 +1147,16 @@ You MUST return your response as a valid JSON object matching exactly this schem
 
     const printWindow = window.open('', '_blank');
     printWindow.document.write(`
-    <html><head><title>IPD Case Paper - ${patient.name}</title></head>
-    <body style="font-family: Arial, sans-serif; padding: 30px;">
-      <div style="text-align:center; border-bottom:2px solid #333; padding-bottom:10px; margin-bottom:20px;">
-        <h2 style="margin:0;">${hospitalInfo.name}</h2>
-        <p style="margin:2px 0; font-size:13px;">${hospitalInfo.address}</p>
+        <html><head><title>IPD Case Paper - ${patient.name}</title></head>
+      <body style="font-family: Arial, sans-serif; padding: 30px; position: relative;">
+      ${getWatermarkHtml()}
+      <div style="display:flex; align-items:center; justify-content:center; gap:20px; border-bottom:2px solid #333; padding-bottom:10px; margin-bottom:20px;">
+        ${hospitalInfo.logoLeft ? `<img src="${hospitalInfo.logoLeft}" style="height:55px; object-fit:contain;" />` : ''}
+        <div style="text-align:center;">
+          <h2 style="margin:0;">${hospitalInfo.name}</h2>
+          <p style="margin:2px 0; font-size:13px;">${hospitalInfo.address}</p>
+        </div>
+        ${hospitalInfo.logoRight ? `<img src="${hospitalInfo.logoRight}" style="height:55px; object-fit:contain;" />` : ''}
       </div>
       <p><b>Patient:</b> ${patient.name} | <b>UHID:</b> ${patient.uhid} | <b>Age/Sex:</b> ${patient.age}/${patient.gender}</p>
       <p><b>Diagnosis:</b> ${(patient.diagnoses || []).join(', ')}</p>
@@ -1107,6 +1302,7 @@ You MUST return your response as a valid JSON object matching exactly this schem
     visitHistory: row.visit_history || [],
     ipdDrugRequests: row.ipd_drug_requests || [],
     ward: row.ward || '',
+    pendingDoctorReview: row.pending_doctor_review || false,
     admissionProcedure: row.admission_procedure || '',
     admissionExpectedDays: row.admission_expected_days || '',
     admissionBillingNote: row.admission_billing_note || '',
@@ -1122,7 +1318,7 @@ You MUST return your response as a valid JSON object matching exactly this schem
     if (!error) setPatients(data.map(mapDbPatientToUi));
   };
 
-// Live sync so Reception/Nursing/Doctor/Lab/Pharmacy all see updates instantly
+  // Live sync so Reception/Nursing/Doctor/Lab/Pharmacy all see updates instantly
   useEffect(() => {
     if (!currentRole?.hospitalId) return;
     fetchPatients();
@@ -1131,7 +1327,9 @@ You MUST return your response as a valid JSON object matching exactly this schem
         .on('postgres_changes',
             { event: '*', schema: 'public', table: 'patients', filter: `hospital_id=eq.${currentRole.hospitalId}` },
             fetchPatients)
-        .subscribe();
+        .subscribe((status) => {
+          console.log('Realtime channel status (patients):', status);
+        });
     return () => supabase.removeChannel(channel);
   }, [currentRole?.hospitalId]);
 
@@ -1159,9 +1357,16 @@ You MUST return your response as a valid JSON object matching exactly this schem
   const [receptionSearch, setReceptionSearch] = useState('');
   const [receptionSubTab, setReceptionSubTab] = useState('registration'); // 'registration' | 'admission'
   const [nursingSearch, setNursingSearch] = useState('');
+  const [nursingExpandedIds, setNursingExpandedIds] = useState({});
+  const toggleNursingExpanded = (patientId) => {
+    setNursingExpandedIds(prev => ({ ...prev, [patientId]: !prev[patientId] }));
+  };
   const [doctorQueueSearch, setDoctorQueueSearch] = useState('');
   const [ipdSearch, setIpdSearch] = useState('');
   const [ipdWardFilter, setIpdWardFilter] = useState('All');
+  const [ipdDeptFilter, setIpdDeptFilter] = useState('All');
+  const [ipdDoctorFilter, setIpdDoctorFilter] = useState('All');
+  const [ipdReferralPatientId, setIpdReferralPatientId] = useState(null);
   const [ipdWardSearch, setIpdWardSearch] = useState('');
   const [ipdActiveDayMap, setIpdActiveDayMap] = useState({});     // { [patientId]: dayId }
   const [ipdEditingDateFor, setIpdEditingDateFor] = useState(null); // dayId whose date is being edited
@@ -1174,6 +1379,10 @@ You MUST return your response as a valid JSON object matching exactly this schem
   const [ipdDrugRequestInputs, setIpdDrugRequestInputs] = useState({}); // { [patientId]: string }
   const [ipdNurseSearch, setIpdNurseSearch] = useState('');
   const [ipdNurseWardFilter, setIpdNurseWardFilter] = useState('All');
+  const [ipdNurseExpandedIds, setIpdNurseExpandedIds] = useState({});
+  const toggleIpdNurseExpanded = (patientId) => {
+    setIpdNurseExpandedIds(prev => ({ ...prev, [patientId]: !prev[patientId] }));
+  };
   const ipdVitalRefs = React.useRef({}); // { [patientId]: { time, bp, pulse, temp, spo2 } refs }
 
   const setIpdVitalRef = (patientId, field, el) => {
@@ -1195,6 +1404,10 @@ You MUST return your response as a valid JSON object matching exactly this schem
   const [pharmacySearch, setPharmacySearch] = useState('');
   const [labSearch, setLabSearch] = useState('');
   const [labCategoryFilter, setLabCategoryFilter] = useState('All');
+  const [labExpandedIds, setLabExpandedIds] = useState({});
+  const toggleLabExpanded = (patientId) => {
+    setLabExpandedIds(prev => ({ ...prev, [patientId]: !prev[patientId] }));
+  };
   const [radiologyImages, setRadiologyImages] = useState({}); // { [patientId]: [{id, name, dataUrl}] }
 
   const handleRadiologyImageUpload = (patientId, e) => {
@@ -1246,6 +1459,7 @@ You MUST return your response as a valid JSON object matching exactly this schem
   const [referralReason, setReferralReason] = useState('');
   const [referralAdviceInputs, setReferralAdviceInputs] = useState({}); // { [referralId]: text }
   const [symptomDurations, setSymptomDurations] = useState({});
+  const [symptomsLineInHistory, setSymptomsLineInHistory] = useState('');
   const [openDurationFor, setOpenDurationFor] = useState(null);
 
   // Prescription State
@@ -1386,7 +1600,9 @@ You MUST return your response as a valid JSON object matching exactly this schem
           : null;
 
       setFollowUpPreview({
+
         isDischarged,
+        isPendingDoctorReview: !!found.pendingDoctorReview,
         lastVisitDate: found.dischargedAt
             ? new Date(found.dischargedAt).toLocaleDateString('en-GB')
             : (lastVisit?.date ? new Date(lastVisit.date).toLocaleDateString('en-GB') : null),
@@ -1474,11 +1690,15 @@ You MUST return your response as a valid JSON object matching exactly this schem
             prescriptions: (existing.prescriptions || []).map(m => ({ name: m.name, dosage: m.dosage, duration: m.duration })),
             dischargeSummary: existing.dischargeSummary || '',
             labResults: existing.labResults || '',
+            pendingReports: (existing.investigationsOrdered || []).filter(
+                inv => !(existing.completedTests || []).includes(inv)
+            ),
           };
           const updatedVisitHistory = (existing.diagnoses && existing.diagnoses.length > 0)
               ? [...(existing.visitHistory || []), newHistoryEntry]
               : (existing.visitHistory || []);
 
+          const isPendingReview = !!existing.pendingDoctorReview;
 
           const resetPatch = {
             status: 'Nursing',
@@ -1515,6 +1735,30 @@ You MUST return your response as a valid JSON object matching exactly this schem
             admissionBillingNote: '',
             ipdDrugRequests: [],
           };
+
+          if (isPendingReview) {
+            // Pending lab report ne lidhe pachho aavelo patient — juna findings jaLvi rakho
+            resetPatch.status = 'Doctor';
+            resetPatch.savedSymptoms = existing.savedSymptoms || [];
+            resetPatch.savedNegativeHistory = existing.savedNegativeHistory || [];
+            resetPatch.savedInvestigations = existing.savedInvestigations || [];
+            resetPatch.savedExamValues = existing.savedExamValues || {};
+            resetPatch.savedManualHistory = existing.savedManualHistory || '';
+            resetPatch.savedPreviousHistory = existing.savedPreviousHistory || '';
+            resetPatch.savedFamilyHistory = existing.savedFamilyHistory || '';
+            resetPatch.savedAiResult = existing.savedAiResult || null;
+            resetPatch.savedSelectedDdx = existing.savedSelectedDdx || [];
+            resetPatch.investigationsOrdered = existing.investigationsOrdered || [];
+            resetPatch.completedTests = existing.completedTests || [];
+            // Fakt LAST visit nu j lab result batavvu — juna history na navu
+            const { current: lastLabOnly } = splitLabResults(existing.labResults || '');
+            const carriedLab = lastLabOnly || existing.labResults || '';
+            resetPatch.labResults = carriedLab
+                ? `${carriedLab}; FOLLOW-UP VISIT — no new investigation done yet this visit`
+                : '';
+            resetPatch.labStatus = 'Completed';
+            resetPatch.pendingDoctorReview = false;
+          }
 
           if (wasInLocalList) {
             setPatients(patients.map(p => p.id === existing.id ? { ...p, ...resetPatch } : p));
@@ -1557,8 +1801,24 @@ You MUST return your response as a valid JSON object matching exactly this schem
             admission_expected_days: '',
             admission_billing_note: '',
             ipd_drug_requests: [],
+            ...(isPendingReview ? {
+              status: 'Doctor',
+              saved_symptoms: resetPatch.savedSymptoms,
+              saved_negative_history: resetPatch.savedNegativeHistory,
+              saved_investigations: resetPatch.savedInvestigations,
+              saved_exam_values: resetPatch.savedExamValues,
+              saved_manual_history: resetPatch.savedManualHistory,
+              saved_previous_history: resetPatch.savedPreviousHistory,
+              saved_family_history: resetPatch.savedFamilyHistory,
+              saved_ai_result: resetPatch.savedAiResult,
+              saved_selected_ddx: resetPatch.savedSelectedDdx,
+              investigations_ordered: resetPatch.investigationsOrdered,
+              completed_tests: resetPatch.completedTests,
+              lab_results: resetPatch.labResults,
+              lab_status: 'Completed',
+              pending_doctor_review: false,
+            } : {}),
           });
-
           setFollowUpUhid("");
           setFollowUpPreview(null);
           setNewPatientName('');
@@ -1638,26 +1898,38 @@ You MUST return your response as a valid JSON object matching exactly this schem
   };
 
   // --- Doctor Panel Actions ---
+  const buildSymptomsLine = (list, durations) =>
+      list.map(s => {
+        const d = durations[s.id];
+        return d && d.num ? `${s.name} (${d.num} ${d.unit})` : s.name;
+      }).join(', ');
+
+  const syncSymptomsIntoHistory = (newList, newDurations) => {
+    const newLine = buildSymptomsLine(newList, newDurations);
+    setManualHistory(prev => {
+      let rest = prev;
+      if (symptomsLineInHistory && prev.startsWith(symptomsLineInHistory)) {
+        rest = prev.slice(symptomsLineInHistory.length).replace(/^,\s*/, '');
+      }
+      return newLine ? (rest ? `${newLine}, ${rest}` : newLine) : rest;
+    });
+    setSymptomsLineInHistory(newLine);
+  };
+
   const toggleSymptom = (symptom) => {
     const exists = selectedSymptoms.find(s => s.id === symptom.id);
-    if (exists) {
-      setSelectedSymptoms(selectedSymptoms.filter(s => s.id !== symptom.id));
-      setManualHistory(prev => {
-        const escaped = symptom.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        const pattern = new RegExp(`,?\\s*${escaped}(\\s*\\([^)]*\\))?`, 'g');
-        return prev.replace(pattern, '').replace(/^,\s*/, '').trim();
-      });
-    } else {
-      setSelectedSymptoms([...selectedSymptoms, symptom]);
-      setSymptomSearch('');
-      setManualHistory(prev => (prev.trim() === '' ? symptom.name : `${prev.trim()}, ${symptom.name}`));
-    }
+    const newList = exists ? selectedSymptoms.filter(s => s.id !== symptom.id) : [...selectedSymptoms, symptom];
+    setSelectedSymptoms(newList);
+    if (!exists) setSymptomSearch('');
+    syncSymptomsIntoHistory(newList, symptomDurations);
   };
 
   const DURATION_UNITS = ['Days', 'Weeks', 'Months', 'Years'];
 
   const setDuration = (symptomId, num, unit) => {
-    setSymptomDurations(prev => ({ ...prev, [symptomId]: { num, unit } }));
+    const newDurations = { ...symptomDurations, [symptomId]: { num, unit } };
+    setSymptomDurations(newDurations);
+    syncSymptomsIntoHistory(selectedSymptoms, newDurations);
   };
 
   const clearDuration = (symptomId) => {
@@ -1679,16 +1951,18 @@ You MUST return your response as a valid JSON object matching exactly this schem
       return d && d.num ? `${s.name} (x ${d.num} ${d.unit})` : s.name;
     }).join(', ');
 
-    const hasImages = clinicalImages.length > 0;
+    const combinedClinicalImages = [
+      ...clinicalImages,
+      ...((activePatient?.labImages) || []),
+    ];
+    const hasImages = combinedClinicalImages.length > 0;
 
     const promptText = `
       You are a multi-disciplinary panel of senior consultants working as a single expert AI — spanning General Medicine (Harrison's Principles of Internal Medicine), General Surgery (Bailey & Love's Short Practice of Surgery), Obstetrics & Gynecology (Williams Obstetrics, Dutta's Textbook of Obstetrics, Shaw's Textbook of Gynecology), Pediatrics (Nelson Textbook of Pediatrics), Orthopedics (Apley's), ENT, Dermatology, Ophthalmology, and Psychiatry. Identify which specialty the presentation actually belongs to from the symptoms and profile below, and reason at that specialty's full depth — an OBG case must be worked up with obstetric/gynecological rigor (gravida/para, gestational age where relevant, obstetric red flags), not generic internal-medicine reasoning, and the same principle applies for surgical, pediatric, or psychiatric presentations.
      
       Patient Profile: ${activePatient?.age}, ${activePatient?.gender}.
       Occupation: ${activePatient?.occupation}.
-      
-      Vitals: ${activePatient?.vitals ? `BP ${activePatient.vitals.bp} mmHg, Pulse ${activePatient.vitals.pulse} bpm, Temp ${activePatient.vitals.temp}°F, SpO2 ${activePatient.vitals.spo2}%` : 'Not recorded'}.
-      Selected Clinical Findings & Symptoms: ${symNames}.
+     Selected Clinical Findings & Symptoms: ${symNames}.
 Doctor's Manual History: ${manualHistory || 'Not provided'}.
 Previous History (Past Illness/Surgery/Medications): ${previousHistory || 'Not provided'}.
 Family History: ${familyHistory || 'Not provided'}.
@@ -1722,16 +1996,16 @@ Based on the complete patient summary above (symptoms, manual history, negative 
     const grokApiUrl = "https://api.groq.com/openai/v1/chat/completions";
 
     // Jo images hoy to vision model vapro, ane content ne text+image array banavo
+
     const messageContent = hasImages
         ? [
-          { type: "text", text: promptText + "\n\nAlso examine the attached clinical image(s) (rash, wound, swelling etc.) and factor visual findings into the differential diagnosis." },
-          ...clinicalImages.map(img => ({
+          { type: "text", text: promptText + "\n\nAlso examine the attached clinical/radiology image(s) (rash, wound, swelling, X-ray, USG etc.) and factor visual findings into the differential diagnosis." },
+          ...combinedClinicalImages.map(img => ({
             type: "image_url",
             image_url: { url: img.dataUrl }
           }))
         ]
         : promptText;
-
     try {
       const response = await fetch(grokApiUrl, {
         method: 'POST',
@@ -1863,22 +2137,25 @@ Based on the complete patient summary above (symptoms, manual history, negative 
   const saveLabResults = (patientId, resultsText) => {
     const images = radiologyImages[patientId] || [];
     const target = patients.find(p => p.id === patientId);
+    const targetIsDischarged = target?.status === 'Discharged';
     setPatients(patients.map(p =>
         p.id === patientId
             ? {
               ...p,
               labResults: resultsText,
               labImages: images,
-              status: 'Doctor',
-              labStatus: 'Completed'
+              status: targetIsDischarged ? 'Discharged' : 'Doctor',
+              labStatus: 'Completed',
+              pendingDoctorReview: targetIsDischarged ? true : p.pendingDoctorReview,
             }
             : p
     ));
     if (target) {
       updatePatientInDb(target.dbId, {
         lab_results: resultsText,
-        status: 'Doctor',
+        status: targetIsDischarged ? 'Discharged' : 'Doctor',
         lab_status: 'Completed',
+        pending_doctor_review: targetIsDischarged ? true : target.pendingDoctorReview,
       });
     }
     setRadiologyImages(prev => {
@@ -2323,6 +2600,7 @@ Keep the tone formal, clinical, and concise. Return ONLY the discharge summary a
     const lastDay = (patient.dailyOrders || [])[(patient.dailyOrders || []).length - 1];
     const meds = lastDay?.meds || [];
     const medStats = getMedGivenStats(patient);
+    const deptInfo = getDeptInfo(patient.department);
     const medsHtml = meds.map(m => `
       <tr>
         <td style="padding:8px;border-bottom:1px solid #ddd;">${m.name}</td>
@@ -2334,12 +2612,17 @@ Keep the tone formal, clinical, and concise. Return ONLY the discharge summary a
 
     const printWindow = window.open('', '_blank');
     printWindow.document.write(`
-      <html><head><title>Discharge Summary - ${patient.name}</title></head>
-      <body style="font-family: Arial, sans-serif; padding: 30px;">
-        <div style="text-align:center; border-bottom:2px solid #333; padding-bottom:10px; margin-bottom:20px;">
-          <h2 style="margin:0;">${hospitalInfo.name}</h2>
-          <p style="margin:2px 0; font-size:13px;">${hospitalInfo.address}</p>
-          <p style="margin:2px 0; font-size:13px;">${hospitalInfo.doctorName}</p>
+           <html><head><title>Discharge Summary - ${patient.name}</title></head>
+      <body style="font-family: Arial, sans-serif; padding: 30px; position: relative;">
+        ${getWatermarkHtml()}
+        <div style="display:flex; align-items:center; justify-content:center; gap:20px; border-bottom:2px solid #333; padding-bottom:10px; margin-bottom:20px;">
+          ${hospitalInfo.logoLeft ? `<img src="${hospitalInfo.logoLeft}" style="height:55px; object-fit:contain;" />` : ''}
+          <div style="text-align:center;">
+            <h2 style="margin:0;">${hospitalInfo.name}</h2>
+            <p style="margin:2px 0; font-size:13px;">${hospitalInfo.address}</p>
+            <p style="margin:2px 0; font-size:13px;">${deptInfo.doctorName}</p>
+          </div>
+          ${hospitalInfo.logoRight ? `<img src="${hospitalInfo.logoRight}" style="height:55px; object-fit:contain;" />` : ''}
         </div>
         <p><b>Patient:</b> ${patient.name} | <b>UHID:</b> ${patient.uhid} | <b>Age/Sex:</b> ${patient.age}/${patient.gender}</p>
         <p><b>Admission:</b> ${admissionStr} &nbsp;|&nbsp; <b>Discharge:</b> ${dischargeStr}</p>
@@ -2356,8 +2639,8 @@ Keep the tone formal, clinical, and concise. Return ONLY the discharge summary a
         <br/><br/>
            <div style="display:flex; justify-content:flex-end; margin-top:30px;">
   <div style="text-align:center;">
-    ${hospitalInfo.doctorSign ? `<img src="${hospitalInfo.doctorSign}" alt="Sign" style="height:45px; object-fit:contain; display:block; margin:0 auto;" />` : `<p style="margin:0;">__________________</p>`}
-    <p style="margin:4px 0 0 0; font-weight:bold;">${hospitalInfo.doctorName || "Doctor's Signature"}</p>
+    ${deptInfo.doctorSign ? `<img src="${deptInfo.doctorSign}" alt="Sign" style="height:45px; object-fit:contain; display:block; margin:0 auto;" />` : `<p style="margin:0;">__________________</p>`}
+    <p style="margin:4px 0 0 0; font-weight:bold;">${deptInfo.doctorName || "Doctor's Signature"}</p>
   </div>
 </div>
 
@@ -2695,7 +2978,7 @@ Keep the tone formal, clinical, and concise. Return ONLY the discharge summary a
   };
 
     const printPrescription = (patient) => {
-
+      const deptInfo = getDeptInfo(patient.department);
       const adviceHtml = (patient.nonPharmManagement || [])
           .filter(item => item.type === 'Advice')
           .map(item => `<li style="margin-bottom:4px;">${item.text}</li>`)
@@ -2733,16 +3016,21 @@ Keep the tone formal, clinical, and concise. Return ONLY the discharge summary a
 
       const printWindow = window.open('', '_blank');
       printWindow.document.write(`
-        <html>
+              <html>
         <head><title>Prescription - ${patient.name}</title></head>
-        <body style="font-family: Arial, sans-serif; padding: 30px;">
-            <div style="text-align: center; border-bottom: 2px solid #333; padding-bottom: 10px; margin-bottom: 20px;">
-                <h2 style="margin:0;">${hospitalInfo.name}</h2>
-                <p style="margin:2px 0; font-size:13px;">${hospitalInfo.address}</p>
-                <p style="margin:2px 0; font-size:13px;">${hospitalInfo.doctorName} </p>
-                <p style="margin:2px 0; font-size:13px;">${hospitalInfo.email}&nbsp;|&nbsp; Contact: ${hospitalInfo.contact}</p>
+        
+                    <body style="font-family: Arial, sans-serif; padding: 30px; position: relative;">
+            ${getWatermarkHtml()}
+            <div style="display:flex; align-items:center; justify-content:center; gap:20px; border-bottom: 2px solid #333; padding-bottom: 10px; margin-bottom: 20px;">
+                ${hospitalInfo.logoLeft ? `<img src="${hospitalInfo.logoLeft}" style="height:55px; object-fit:contain;" />` : ''}
+                <div style="text-align:center;">
+                    <h2 style="margin:0;">${hospitalInfo.name}</h2>
+                    <p style="margin:2px 0; font-size:13px;">${hospitalInfo.address}</p>
+                    <p style="margin:2px 0; font-size:13px;">${deptInfo.doctorName} </p>
+                    <p style="margin:2px 0; font-size:13px;">${hospitalInfo.email}&nbsp;|&nbsp; Contact: ${hospitalInfo.contact}</p>
+                </div>
+                ${hospitalInfo.logoRight ? `<img src="${hospitalInfo.logoRight}" style="height:55px; object-fit:contain;" />` : ''}
             </div>
-            
             <p style="text-align: left;"><b>Patient:</b> ${patient.name}&nbsp;&nbsp;|&nbsp;&nbsp;<b>UHID:</b> ${patient.uhid}&nbsp;&nbsp;|&nbsp;&nbsp;<b>Age/Sex:</b> ${patient.age} / ${patient.gender}</p>
  <p style="margin:4px 0; font-size:13px;"><b>Date:</b> ${new Date().toLocaleDateString('en-GB')}</p>
 
@@ -2906,12 +3194,12 @@ ${patient.followUpAdvice ? `
     return (
         <div className="flex h-screen bg-gray-100 font-sans">
           {/* Sidebar */}
-          <div className="w-64 bg-[#1e2330] flex flex-col justify-between text-white flex-shrink-0 shadow-lg z-10 md:flex">
-            <div className="p-4 flex items-center space-x-3 border-b border-slate-700">
-              <Activity className="text-blue-400 w-6 h-6"/>
+          <div className="w-32 bg-[#1e2330] flex flex-col justify-between text-white flex-shrink-0 shadow-lg z-10 md:flex">
+            <div className="p-3 flex items-center space-x-2 border-b border-slate-700">
+              <Activity className="text-blue-400 w-4 h-6"/>
               <div>
                 <h1 className="font-bold text-lg leading-tight">MedFlow AI</h1>
-                <p className="text-xs text-slate-400"> AI Hospital Made by dr.Ram PR</p>
+                <p className="text-xs text-slate-400"> AI Hospital Made by dr.PR</p>
               </div>
             </div>
             <div className="flex-1 py-4 space-y-1">
@@ -3151,6 +3439,9 @@ ${patient.followUpAdvice ? `
                                         {followUpPreview.dischargeOutcome && (
                                             <p className="text-gray-700 mb-1"><b>Discharge Outcome:</b> {followUpPreview.dischargeOutcome}</p>
                                         )}
+                                        {followUpPreview.isPendingDoctorReview && (
+                                            <p className="text-red-700 font-bold mb-1">⚠ New lab report has arrived since discharge — this visit will resume the previous case (symptoms/history preserved).</p>
+                                        )}
                                         {followUpPreview.dischargeSummary ? (
                                             <details className="mt-1">
                                               <summary className="cursor-pointer font-semibold text-amber-700">View Previous Discharge Summary</summary>
@@ -3230,7 +3521,7 @@ ${patient.followUpAdvice ? `
                                     onChange={e => setNewPatientDepartment(e.target.value)}
                                     className="w-full border border-gray-300 rounded-lg px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all bg-white"
                                 >
-                                  {DEPARTMENTS.map(d => <option key={d} value={d}>{d}</option>)}
+                                  {activeDepartmentNames.map(d => <option key={d} value={d}>{d}</option>)}
                                 </select>
                               </div>
 
@@ -3421,7 +3712,7 @@ ${patient.followUpAdvice ? `
                               <div key={p.id}
                                    className="bg-white rounded-xl border shadow-sm overflow-hidden flex flex-col">
                                 <div
-                                    className={`p-4 border-b flex justify-between items-center ${p.triage === 'RED' ? 'bg-red-50' : p.triage === 'YELLOW' ? 'bg-yellow-50' : 'bg-gray-50'}`}>
+                                    className={`p-1 border-b flex justify-between items-center ${p.triage === 'RED' ? 'bg-red-50' : p.triage === 'YELLOW' ? 'bg-yellow-50' : 'bg-gray-50'}`}>
                                   <div>
                                     <div className="flex items-center gap-2">
                                       <h4 className="font-bold text-gray-900 text-lg">{p.name}</h4>
@@ -3432,17 +3723,27 @@ ${patient.followUpAdvice ? `
                                         className="font-medium text-gray-800">{p.occupation}</span></p>
                                   </div>
                                   <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full border ${
-                                      p.triage === 'RED' ? 'bg-red-100 text-red-700 border-red-200' :
-                                          p.triage === 'YELLOW' ? 'bg-yellow-100 text-yellow-700 border-yellow-200' :
+                                      p.triage === 'RED' ? 'bg-red-100 text-red-400 border-red-200' :
+                                          p.triage === 'YELLOW' ? 'bg-yellow-100 text-yellow-400 border-yellow-200' :
                                               'bg-green-100 text-green-700 border-green-200'
                                   }`}>
                           {p.triage}
-                        </span>
+                                          </span>
                                 </div>
 
-                                <div className="p-5 flex-1">
-                                  <h5 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-4">Record
-                                    Vitals</h5>
+                                <div className="px-5 pt-3">
+                                  <button
+                                      onClick={() => toggleNursingExpanded(p.id)}
+                                      className="text-xs font-semibold text-indigo-600 hover:text-indigo-800 flex items-center gap-1"
+                                  >
+                                    {nursingExpandedIds[p.id] ? '▲ Hide Details' : '▼ View Details (Record Vitals)'}
+                                  </button>
+                                </div>
+
+                                {nursingExpandedIds[p.id] && (
+                                    <div className="p-5 flex-1">
+                                      <h5 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-4">Record
+                                        Vitals</h5>
                                   <div className="grid grid-cols-2 gap-4">
                                     <div>
                                       <label className="block text-xs font-medium text-gray-700 mb-1">Blood Pressure
@@ -3488,7 +3789,8 @@ ${patient.followUpAdvice ? `
                                       />
                                     </div>
                                   </div>
-                                </div>
+                                    </div>
+                                )}
 
                                 <div className="p-4 bg-gray-50 border-t flex justify-end">
                                   <button
@@ -3513,55 +3815,38 @@ ${patient.followUpAdvice ? `
                     {/* Doctor Header: Patient Selector */}
 
 
-                    <div className="bg-white rounded-xl border shadow-sm p-3">
-                      <div className="flex items-center gap-2 mb-2">
-                        <span className="text-xs font-semibold text-gray-500 uppercase">Department:</span>
-                        <span className="px-3 py-1 rounded-full text-xs font-bold bg-indigo-600 text-white">{doctorDeptFilter}</span>
-                        {doctorDeptFilter !== 'All' && (
-                            <button onClick={() => setDoctorDeptFilter('All')} className="text-xs text-gray-400 hover:text-red-600 font-semibold">Clear</button>
-                        )}
-                      </div>
-                      <input
-                          type="text"
-                          value={doctorDeptSearch}
-                          onChange={(e) => setDoctorDeptSearch(e.target.value)}
-                          placeholder="Search department..."
-                          className="w-full border rounded-lg px-3 py-1.5 text-sm mb-2 focus:ring-2 focus:ring-indigo-400 outline-none"
-                      />
-                      <div className="flex flex-wrap gap-2 max-h-28 overflow-y-auto">
-                        <button
-                            onClick={() => { setDoctorDeptFilter('All'); setDoctorDeptSearch(''); }}
-                            className={`px-3 py-1.5 rounded-full text-xs font-semibold border ${doctorDeptFilter === 'All' ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-gray-600 border-gray-300 hover:border-indigo-300'}`}
-                        >
-                          All
-                        </button>
-                        {DEPARTMENTS.filter(d => d.toLowerCase().includes(doctorDeptSearch.trim().toLowerCase())).map(d => (
-                            <button
-                                key={d}
-                                onClick={() => { setDoctorDeptFilter(d); setDoctorDeptSearch(''); }}
-                                className={`px-3 py-1.5 rounded-full text-xs font-semibold border ${
-                                    doctorDeptFilter === d ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-gray-600 border-gray-300 hover:border-indigo-300'
-                                }`}
-                            >
-                              {d}
-                            </button>
-                        ))}
-                      </div>
-                    </div>
+                    {/* Department અને Search Bar ને બાજુ-બાજુમાં ગોઠવવા માટે */}
+                    <div className="bg-white rounded-xl border shadow-sm p-1 flex items-center gap-3">
 
-                    <div className="bg-white rounded-xl border shadow-sm p-3 flex items-center gap-2">
-                      <Search size={16} className="text-gray-400 shrink-0"/>
-                      <input
-                          type="text"
-                          value={doctorQueueSearch}
-                          onChange={(e) => setDoctorQueueSearch(e.target.value)}
-                          placeholder="Search queue by UHID or patient name..."
-                          className="w-full outline-none text-sm"
-                      />
+                      {/* 1. Department Picker */}
+                      <div className="flex items-center gap-1 shrink-0">
+                        <span className="text-xs font-semibold text-gray-500 uppercase">Department:</span>
+                        <DepartmentPickerButton
+                            selected={doctorDeptFilter === 'All' ? '' : doctorDeptFilter}
+                            options={activeDepartmentNames}
+                            onSelect={setDoctorDeptFilter}
+                        />
+                      </div>
+
+                      {/* 2. Divider Line */}
+                      <div className="h-6 w-px bg-gray-200"></div>
+
+                      {/* 3. Search Box */}
+                      <div className="flex items-center gap-2 flex-1">
+                        <Search size={16} className="text-gray-400 shrink-0" />
+                        <input
+                            type="text"
+                            value={doctorQueueSearch}
+                            onChange={(e) => setDoctorQueueSearch(e.target.value)}
+                            placeholder="Search queue by UHID or patient name..."
+                            className="w-full outline-none text-sm bg-transparent"
+                        />
+                      </div>
+
                     </div>
                     <div
-                        className="bg-white rounded-xl border shadow-sm p-3 flex flex-wrap gap-2 items-center overflow-x-auto">
-                      <span className="text-xs font-semibold text-gray-500 uppercase px-2">Waiting:</span>
+                        className="bg-white rounded-xl border shadow-sm p-1 flex flex-wrap gap-2 items-center overflow-x-auto">
+                      <span className="text-xs font-semibold text-gray-400 uppercase px-2">Waiting:</span>
 
                       {patients.filter(p => p.status === 'Doctor' && matchesSearch(p, doctorQueueSearch) && (doctorDeptFilter === 'All' || p.department === doctorDeptFilter || (p.referrals || []).some(r => r.toDept === doctorDeptFilter && r.status === 'Pending'))).length === 0 ? (
                           <span className="text-sm text-gray-500 italic">No matching patients in queue</span>
@@ -3570,7 +3855,7 @@ ${patient.followUpAdvice ? `
                               <button
                                   key={p.id}
                                   onClick={() => setSelectedPatientId(p.id)}
-                                  className={`px-3 py-1.5 rounded-lg text-sm font-medium border transition-colors flex items-center gap-2 whitespace-nowrap ${
+                                  className={`px-2 py-1.5 rounded-lg text-sm font-medium border transition-colors flex items-center gap-2 whitespace-nowrap ${
                                       selectedPatientId === p.id
                                           ? 'bg-indigo-50 border-indigo-200 text-indigo-700'
                                           : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
@@ -3678,17 +3963,12 @@ ${patient.followUpAdvice ? `
                                         placeholder="Search department..."
                                         className="w-full border rounded-lg px-2 py-1.5 text-sm"
                                     />
-                                    <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
-                                      {DEPARTMENTS.filter(d => d.toLowerCase().includes(referralDeptSearch.trim().toLowerCase())).map(d => (
-                                          <button
-                                              key={d}
-                                              onClick={() => setReferralTargetDept(d)}
-                                              className={`px-2 py-1 rounded-full text-[11px] font-semibold border ${referralTargetDept === d ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-gray-600 border-gray-300'}`}
-                                          >
-                                            {d}
-                                          </button>
-                                      ))}
-                                    </div>
+                                    <DepartmentPickerButton
+                                        selected={referralTargetDept}
+                                        options={activeDepartmentNames}
+                                        onSelect={setReferralTargetDept}
+                                        placeholder="Choose department"
+                                    />
                                     <textarea
                                         value={referralReason}
                                         onChange={(e) => setReferralReason(e.target.value)}
@@ -3847,6 +4127,12 @@ ${patient.followUpAdvice ? `
                                                         <p className="text-xs text-gray-600 whitespace-pre-wrap mt-1">{visit.dischargeSummary}</p>
                                                       </details>
                                                   )}
+                                                  {visit.pendingReports && visit.pendingReports.length > 0 && (
+                                                      <div className="mt-2 bg-red-50 border border-red-200 rounded-lg p-2">
+                                                        <p className="text-[10px] font-bold text-red-700 uppercase mb-1">⚠ Pending Reports (not received last visit)</p>
+                                                        <p className="text-xs text-red-700">{visit.pendingReports.join(', ')}</p>
+                                                      </div>
+                                                  )}
                                                 </div>
                                             ))}
                                           </div>
@@ -3930,56 +4216,6 @@ ${patient.followUpAdvice ? `
 
                                     </div>
 
-                                    {selectedSymptoms.length > 0 && (
-                                        <div className="mb-6">
-                                          <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Selected Symptoms</h4>
-                                          <div className="flex flex-wrap gap-2">
-                                            {selectedSymptoms.map(sym => {
-                                              const duration = symptomDurations[sym.id];
-                                              const isOpen = openDurationFor === sym.id;
-                                              return (
-                                                  <span key={sym.id} className="inline-flex items-center gap-1 bg-indigo-100 text-indigo-700 border border-indigo-200 px-3 py-1.5 rounded-full text-sm">
-                              {sym.name}
-                                                    <button
-                                                        onClick={() => setOpenDurationFor(isOpen ? null : sym.id)}
-                                                        className="ml-1 text-xs px-2 py-0.5 rounded-full border border-dashed border-indigo-300 text-indigo-500 hover:border-indigo-500 hover:text-indigo-800"
-                                                    >
-                                {duration?.num ? `${duration.num} ${duration.unit}` : '+ duration'}
-                              </button>
-                                                    {isOpen && (
-                                                        <span className="flex items-center gap-1 bg-white border border-indigo-200 rounded-lg px-2 py-1 ml-1">
-                                    <input
-                                        type="number"
-                                        min="0"
-                                        defaultValue={duration?.num ?? ''}
-                                        className="w-12 text-sm border border-gray-300 rounded px-1"
-                                        onChange={(e) => setDuration(sym.id, e.target.value, duration?.unit || 'Days')}
-                                        autoFocus
-                                    />
-                                    <select
-                                        value={duration?.unit || 'Days'}
-                                        className="text-sm border border-gray-300 rounded px-1"
-                                        onChange={(e) => setDuration(sym.id, duration?.num || '', e.target.value)}
-                                    >
-                                      {DURATION_UNITS.map(u => <option key={u} value={u}>{u}</option>)}
-                                    </select>
-                                    <button
-                                        onClick={() => setOpenDurationFor(null)}
-                                        className="text-xs text-gray-400 hover:text-gray-700 px-1"
-                                    >
-                                      &#10003;
-                                    </button>
-                                  </span>
-                                                    )}
-                                                    <button onClick={() => toggleSymptom(sym)} className="text-indigo-400 hover:text-indigo-800">
-                                &times;
-                              </button>
-                            </span>
-                                              );
-                                            })}
-                                          </div>
-                                        </div>
-                                    )}
 
                                     <input
                                         type="text"
@@ -3999,18 +4235,39 @@ ${patient.followUpAdvice ? `
                                             return matchesCategory && matchesSearch;
                                           }).map(sym => {
                                             const isSelected = selectedSymptoms.find(s => s.id === sym.id);
+                                            const duration = symptomDurations[sym.id];
+                                            const isOpen = openDurationFor === sym.id;
                                             return (
-                                                <button
-                                                    key={sym.id}
-                                                    onClick={() => toggleSymptom(sym)}
-                                                    className={`px-3 py-1.5 rounded-full text-sm font-medium border transition-all ${
-                                                        isSelected
-                                                            ? 'bg-indigo-50 border-indigo-300 text-indigo-800 shadow-sm ring-1 ring-indigo-200'
-                                                            : 'bg-white border-gray-200 text-gray-600 hover:border-indigo-300 hover:bg-gray-50'
-                                                    }`}
-                                                >
-                                                  {sym.name}
-                                                </button>
+                                                <span key={sym.id} className="relative inline-flex items-center">
+                                                  <button
+                                                      onClick={() => toggleSymptom(sym)}
+                                                      className={`px-3 py-1.5 rounded-full text-sm font-medium border transition-all ${
+                                                          isSelected
+                                                              ? 'bg-indigo-50 border-indigo-300 text-indigo-800 shadow-sm ring-1 ring-indigo-200'
+                                                              : 'bg-white border-gray-200 text-gray-600 hover:border-indigo-300 hover:bg-gray-50'
+                                                      }`}
+                                                  >
+                                                    {sym.name}{duration?.num ? ` · ${duration.num}${duration.unit[0]}` : ''}
+                                                  </button>
+                                                  {isSelected && (
+                                                      <button onClick={() => setOpenDurationFor(isOpen ? null : sym.id)}
+                                                              className="ml-0.5 text-[10px] text-indigo-400 hover:text-indigo-700" title="Set duration">⏱</button>
+                                                  )}
+                                                  {isOpen && (
+                                                      <span className="absolute z-20 top-full left-0 mt-1 flex items-center gap-1 bg-white border border-indigo-200 rounded-lg px-2 py-1 shadow-lg">
+                                                        <input type="number" min="0" defaultValue={duration?.num ?? ''}
+                                                               className="w-12 text-sm border border-gray-300 rounded px-1"
+                                                               onChange={(e) => setDuration(sym.id, e.target.value, duration?.unit || 'Days')}
+                                                               autoFocus
+                                                        />
+                                                        <select value={duration?.unit || 'Days'} className="text-sm border border-gray-300 rounded px-1"
+                                                                onChange={(e) => setDuration(sym.id, duration?.num || '', e.target.value)}>
+                                                          {DURATION_UNITS.map(u => <option key={u} value={u}>{u}</option>)}
+                                                        </select>
+                                                        <button onClick={() => setOpenDurationFor(null)} className="text-xs text-gray-400 hover:text-gray-700 px-1">&#10003;</button>
+                                                      </span>
+                                                  )}
+                                                </span>
                                             );
                                           })}
                                     </div>
@@ -4243,22 +4500,6 @@ ${patient.followUpAdvice ? `
 
                                   <div className="flex-1 overflow-y-auto p-5 space-y-5">
 
-                                    <div className="bg-gray-50 rounded-lg p-4 border">
-                                      <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Symptoms</h4>
-                                      {selectedSymptoms.length > 0 ? (
-                                          <div className="flex flex-wrap gap-2">
-                                            {selectedSymptoms.map(sym => {
-                                              const d = symptomDurations[sym.id];
-                                              return (
-                                                  <span key={sym.id} className="bg-indigo-100 text-indigo-700 px-2.5 py-1 rounded-full text-xs">
-                              {sym.name}{d?.num ? ` (${d.num} ${d.unit})` : ''}
-                            </span>
-                                              );
-                                            })}
-
-                                          </div>
-                                      ) : <p className="text-sm text-gray-400 italic">None selected</p>}
-                                    </div>
 
                                     <div className="bg-gray-50 rounded-lg p-4 border">
                                       <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Manual History/Compalint</h4>
@@ -4289,24 +4530,38 @@ ${patient.followUpAdvice ? `
                                       ) : <p className="text-sm text-gray-400 italic">None selected</p>}
                                     </div>
 
-                                    {activePatient?.labResults && (
-                                        <div className="bg-yellow-50 rounded-lg p-4 border border-yellow-200">
-                                          <h4 className="text-xs font-bold text-yellow-700 uppercase tracking-wider mb-1">Lab Results</h4>
-                                          <p className="text-sm text-gray-800 whitespace-pre-wrap">{activePatient.labResults}</p>
-                                          {activePatient.labImages && activePatient.labImages.length > 0 && (
-                                              <div className="mt-3">
-                                                <h5 className="text-xs font-bold text-yellow-700 uppercase mb-2">Radiology Images</h5>
-                                                <div className="flex flex-wrap gap-2">
-                                                  {activePatient.labImages.map(img => (
-                                                      <a key={img.id} href={img.dataUrl} target="_blank" rel="noreferrer">
-                                                        <img src={img.dataUrl} alt={img.name} className="w-24 h-24 rounded-lg object-cover border hover:opacity-80 transition-opacity" />
-                                                      </a>
-                                                  ))}
+                                    {activePatient?.labResults && (() => {
+                                      const { previous, current } = splitLabResults(activePatient.labResults);
+                                      return (
+                                          <>
+                                            {previous.length > 0 && (
+                                                <div className="bg-gray-50 rounded-lg p-4 border">
+                                                  <h4 className="text-xs font-bold text-gray-500 uppercase mb-1">Previous Lab Report</h4>
+                                                  {previous.map((p, i) => <p key={i} className="text-sm text-gray-700 whitespace-pre-wrap">{p}</p>)}
                                                 </div>
-                                              </div>
-                                          )}
-                                        </div>
-                                    )}
+                                            )}
+                                            {current && (
+                                                <div className="bg-yellow-50 rounded-lg p-4 border border-yellow-200">
+                                                  <h4 className="text-xs font-bold text-yellow-700 uppercase tracking-wider mb-1">Current Lab Report</h4>
+                                                  <p className="text-sm text-gray-800 whitespace-pre-wrap">{current}</p>
+                                                </div>
+                                            )}
+                                            {activePatient.labImages && activePatient.labImages.length > 0 && (
+                                                <div className="mt-3">
+                                                  <h5 className="text-xs font-bold text-yellow-700 uppercase mb-2">Radiology Images</h5>
+                                                  <div className="flex flex-wrap gap-2">
+                                                    {activePatient.labImages.map(img => (
+                                                        <a key={img.id} href={img.dataUrl} target="_blank" rel="noreferrer">
+                                                          <img src={img.dataUrl} alt={img.name} className="w-24 h-24 rounded-lg object-cover border hover:opacity-80 transition-opacity" />
+                                                        </a>
+                                                    ))}
+                                                  </div>
+                                                </div>
+                                            )}
+                                          </>
+                                      );
+                                    })()}
+
 
                                     <div className="bg-gray-50 rounded-lg p-4 border">
                                       <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Examination Findings</h4>
@@ -4741,16 +4996,7 @@ ${patient.followUpAdvice ? `
               {activeTab === 'ipd' && (
                   <div className="max-w-4xl mx-auto space-y-4">
                     <h2 className="text-xl font-bold text-gray-700">IPD Ward</h2>
-                    <div className="bg-white p-3 rounded-xl border shadow-sm flex items-center gap-2">
-                      <Search size={16} className="text-gray-400 shrink-0"/>
-                      <input
-                          type="text"
-                          value={ipdSearch}
-                          onChange={(e) => setIpdSearch(e.target.value)}
-                          placeholder="Search by UHID or patient name..."
-                          className="w-full outline-none text-sm"
-                      />
-                    </div>
+
 
                     <div className="bg-white p-3 rounded-xl border shadow-sm space-y-2">
                       <div className="flex items-center gap-2">
@@ -4785,13 +5031,59 @@ ${patient.followUpAdvice ? `
                       </div>
                     </div>
 
-                    {patients.filter(p => p.status === 'IPD' && matchesSearch(p, ipdSearch) && (ipdWardFilter === 'All' || p.ward === ipdWardFilter)).length === 0 ? (
+                    <div className="bg-white p-2 rounded-xl border shadow-sm flex flex-wrap items-center gap-3">
+                      <div className="flex items-center gap-1.5 w-48 shrink-0">
+                        <Search size={14} className="text-gray-400 shrink-0"/>
+                        <input
+                            type="text"
+                            value={ipdSearch}
+                            onChange={(e) => setIpdSearch(e.target.value)}
+                            placeholder="UHID/name..."
+                            className="w-full outline-none text-xs"
+                        />
+                      </div>
+                      <div className="h-6 w-px bg-gray-200"></div>
+                      <div className="flex items-center gap-1">
+                        <span className="text-xs font-semibold text-gray-500 uppercase">Department:</span>
+                        <DepartmentPickerButton
+                            selected={ipdDeptFilter === 'All' ? '' : ipdDeptFilter}
+                            options={activeDepartmentNames}
+                            onSelect={(d) => { setIpdDeptFilter(d); setIpdDoctorFilter('All'); }}
+                        />
+                      </div>
+                      <div className="h-6 w-px bg-gray-200"></div>
+                      <div className="flex items-center gap-1 flex-wrap">
+                        <span className="text-xs font-semibold text-gray-500 uppercase">Doctor:</span>
+                        <button
+                            onClick={() => setIpdDoctorFilter('All')}
+                            className={`px-3 py-1.5 rounded-full text-xs font-semibold border ${ipdDoctorFilter === 'All' ? 'bg-red-600 text-white border-red-600' : 'bg-white text-gray-600 border-gray-300 hover:border-red-300'}`}
+                        >
+                          All Doctors
+                        </button>
+                        {(ipdDeptFilter === 'All'
+                                ? (hospitalInfo.departments || [])
+                                : (hospitalInfo.departments || []).filter(d => d.name === ipdDeptFilter)
+                        ).flatMap(d => (d.doctors && d.doctors.length > 0 ? d.doctors : (d.doctorName ? [{ name: d.doctorName }] : [])))
+                            .filter((doc, i, arr) => doc.name && arr.findIndex(x => x.name === doc.name) === i)
+                            .map(doc => (
+                                <button
+                                    key={doc.name}
+                                    onClick={() => setIpdDoctorFilter(doc.name)}
+                                    className={`px-3 py-1.5 rounded-full text-xs font-semibold border ${ipdDoctorFilter === doc.name ? 'bg-red-600 text-white border-red-600' : 'bg-white text-gray-600 border-gray-300 hover:border-red-300'}`}
+                                >
+                                  {doc.name}
+                                </button>
+                            ))}
+                      </div>
+                    </div>
+
+                    {patients.filter(p => p.status === 'IPD' && matchesSearch(p, ipdSearch) && (ipdWardFilter === 'All' || p.ward === ipdWardFilter) && ipdPatientMatchesFilters(p)).length === 0 ? (
                         <div className="bg-white p-8 rounded-xl border text-center text-gray-400">
                           No matching admitted patients.
                         </div>
                     ) : (
 
-                        patients.filter(p => p.status === 'IPD' && matchesSearch(p, ipdSearch) && (ipdWardFilter === 'All' || p.ward === ipdWardFilter)).map(p => (
+                        patients.filter(p => p.status === 'IPD' && matchesSearch(p, ipdSearch) && (ipdWardFilter === 'All' || p.ward === ipdWardFilter) && ipdPatientMatchesFilters(p)).map(p => (
 
                             <div key={p.id} className="bg-white p-4 rounded-xl border shadow-sm">
                               <div className="flex justify-between items-start">
@@ -5059,6 +5351,100 @@ ${patient.followUpAdvice ? `
 
                               </div>
 
+                                    <div className="mt-4 border-t pt-4 space-y-3">
+                                      <div className="flex items-center justify-between">
+                                        <h5 className="text-xs font-bold text-gray-500 uppercase tracking-wider">Referrals / Consults</h5>
+                                        <button
+                                            onClick={() => {
+                                              setIpdReferralPatientId(p.id);
+                                              setShowReferralForm(prev => (ipdReferralPatientId === p.id ? !prev : true));
+                                            }}
+                                            className="text-xs font-semibold text-indigo-600 hover:text-indigo-800"
+                                        >
+                                          {showReferralForm && ipdReferralPatientId === p.id ? 'Cancel' : '+ Refer to Dept'}
+                                        </button>
+                                      </div>
+
+                                      {showReferralForm && ipdReferralPatientId === p.id && (
+                                          <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-3 space-y-2">
+                                            <input
+                                                type="text"
+                                                value={referralDeptSearch}
+                                                onChange={(e) => setReferralDeptSearch(e.target.value)}
+                                                placeholder="Search department..."
+                                                className="w-full border rounded-lg px-2 py-1.5 text-sm"
+                                            />
+                                            <DepartmentPickerButton
+                                                selected={referralTargetDept}
+                                                options={activeDepartmentNames}
+                                                onSelect={setReferralTargetDept}
+                                                placeholder="Choose department"
+                                            />
+                                            <textarea
+                                                value={referralReason}
+                                                onChange={(e) => setReferralReason(e.target.value)}
+                                                placeholder="Reason for referral / question for the specialist..."
+                                                rows={2}
+                                                className="w-full border rounded-lg px-2 py-1.5 text-sm"
+                                            />
+                                            <button
+                                                onClick={() => { addReferral(p); setIpdReferralPatientId(null); }}
+                                                disabled={!referralTargetDept || !referralReason.trim()}
+                                                className="w-full bg-indigo-600 text-white py-1.5 rounded-lg text-xs font-bold disabled:opacity-40"
+                                            >
+                                              Send Referral to {referralTargetDept || '...'}
+                                            </button>
+                                          </div>
+                                      )}
+
+                                      {(p.referrals || []).length === 0 ? (
+                                          <p className="text-xs text-gray-400 italic">No referrals sent.</p>
+                                      ) : (
+                                          <div className="space-y-2">
+                                            {p.referrals.map(ref => (
+                                                <div key={ref.id} className="border rounded-lg p-2.5 bg-gray-50">
+                                                  <div className="flex justify-between items-start mb-1">
+                                                    <span className="text-xs font-bold text-gray-800">{ref.toDept}</span>
+                                                    <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${
+                                                        ref.status === 'Pending' ? 'bg-yellow-100 text-yellow-700' :
+                                                            ref.status === 'Answered' ? 'bg-green-100 text-green-700' :
+                                                                ref.status === 'Transfer Recommended' ? 'bg-red-100 text-red-700' :
+                                                                    'bg-blue-100 text-blue-700'
+                                                    }`}>
+                                                {ref.status}
+                                              </span>
+                                                  </div>
+                                                  <p className="text-[11px] text-gray-600 mb-1">{ref.reason}</p>
+                                                  {ref.advice && (
+                                                      <p className="text-[11px] text-indigo-700 bg-white border border-indigo-100 rounded p-1.5 mb-1"><b>Advice:</b> {ref.advice}</p>
+                                                  )}
+                                                  {ref.status === 'Pending' && (
+                                                      <div className="space-y-1.5 mt-1.5">
+                                                  <textarea
+                                                      value={referralAdviceInputs[ref.id] || ''}
+                                                      onChange={(e) => setReferralAdviceInputs(prev => ({ ...prev, [ref.id]: e.target.value }))}
+                                                      placeholder={`Reply as ${ref.toDept} specialist...`}
+                                                      rows={2}
+                                                      className="w-full border rounded-lg px-2 py-1 text-xs"
+                                                  />
+                                                        <div className="flex gap-1.5">
+                                                          <button onClick={() => sendReferralAdvice(p, ref.id)} className="flex-1 bg-green-600 text-white py-1 rounded text-[11px] font-semibold">Send Advice</button>
+                                                          <button onClick={() => recommendReferralTransfer(p, ref.id)} className="flex-1 bg-red-600 text-white py-1 rounded text-[11px] font-semibold">Recommend Transfer</button>
+                                                        </div>
+                                                      </div>
+                                                  )}
+                                                  {ref.status === 'Transfer Recommended' && (
+                                                      <div className="flex gap-1.5 mt-1.5">
+                                                        <button onClick={() => acceptReferralTransfer(p, ref.id)} className="flex-1 bg-red-600 text-white py-1 rounded text-[11px] font-semibold">Accept & Transfer to {ref.toDept}</button>
+                                                        <button onClick={() => dismissReferralTransfer(p, ref.id)} className="flex-1 bg-gray-200 text-gray-700 py-1 rounded text-[11px] font-semibold">Keep Here</button>
+                                                      </div>
+                                                  )}
+                                                </div>
+                                            ))}
+                                          </div>
+                                      )}
+                                    </div>
+
                               <div className="mt-4 border-t pt-4">
                                 <h5 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">
                                   Investigations / Lab Orders
@@ -5217,6 +5603,16 @@ ${patient.followUpAdvice ? `
                                   <span className="text-[10px] font-bold px-2 py-1 rounded-full bg-red-100 text-red-700 border border-red-200">ADMITTED</span>
                                 </div>
 
+                                <button
+                                    onClick={() => toggleIpdNurseExpanded(p.id)}
+                                    className="text-xs font-semibold text-indigo-600 hover:text-indigo-800 flex items-center gap-1"
+                                >
+                                  {ipdNurseExpandedIds[p.id] ? '▲ Hide Details' : '▼ View Details (Vitals, Medications, Advice)'}
+                                </button>
+
+                                {ipdNurseExpandedIds[p.id] && (
+                                    <>
+
                                 {/* Chief complaint / history reference */}
                                 <div className="bg-gray-50 rounded-lg p-3 text-xs text-gray-700 space-y-1">
                                   <p><b>Chief Complaint:</b> {p.complaint || 'Not recorded'}</p>
@@ -5300,6 +5696,8 @@ ${patient.followUpAdvice ? `
                                     </>
                                 )}
 
+
+
                                 {/* Drug request to Pharmacy */}
                                 <div className="border-t pt-3">
                                   <h5 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Request Drug from Pharmacy</h5>
@@ -5328,8 +5726,20 @@ ${patient.followUpAdvice ? `
                                       <Plus size={16}/> Send to Pharmacy
                                     </button>
                                   </div>
+
+                                </div>
+                                    </>
+                                )}
+                                <div className="mt-3 flex justify-end">
+                                  <button
+                                      onClick={() => { printIpdCasePaper(p); setIpdPrinted(prev => ({ ...prev, [p.id]: true })); }}
+                                      className={`px-4 py-2 rounded-lg text-sm font-semibold text-white flex items-center gap-2 ${ipdPrinted[p.id] ? 'bg-green-600 hover:bg-green-700' : 'bg-blue-600 hover:bg-blue-700'}`}
+                                  >
+                                    🖨️ {ipdPrinted[p.id] ? 'Re-print Case Paper' : 'Print Case Paper'}
+                                  </button>
                                 </div>
                               </div>
+
                           );
                         })
                     )}
@@ -5620,7 +6030,15 @@ ${patient.followUpAdvice ? `
                                 <h3 className="font-bold">{p.name} <span className="text-sm text-gray-500">({p.age}y, {p.gender})</span></h3>
 
                                 <p className="text-sm text-gray-600 mb-2">Investigations ordered: {(p.investigationsOrdered || []).join(', ') || 'General'}</p>
-                                {(() => {
+
+                                <button
+                                    onClick={() => toggleLabExpanded(p.id)}
+                                    className="text-xs font-semibold text-indigo-600 hover:text-indigo-800 flex items-center gap-1 mb-2"
+                                >
+                                  {labExpandedIds[p.id] ? '▲ Hide Details' : '▼ View Details (Enter Results)'}
+                                </button>
+
+                                {labExpandedIds[p.id] && (() => {
                                   const invList = p.investigationsOrdered && p.investigationsOrdered.length > 0 ? p.investigationsOrdered : ['General Test'];
 
                                   const completedList = p.completedTests || [];
@@ -5676,7 +6094,12 @@ ${patient.followUpAdvice ? `
                                                   )}
                                                 </div>
                                               </div>
-
+                                              <button
+                                                  onClick={() => printLabValues(p, 'radiology', radiologyEntries)}
+                                                  className="w-full mt-3 py-2 rounded-lg text-sm font-bold border border-purple-300 text-purple-700 bg-white hover:bg-purple-50"
+                                              >
+                                                🖨️ Print Radiology Values
+                                              </button>
                                               <button
                                                   onClick={() => sendLabSection(p, 'radiology')}
                                                   disabled={p.radiologyDone}
@@ -5710,6 +6133,12 @@ ${patient.followUpAdvice ? `
                                                     </div>
                                                 ))}
                                               </div>
+                                              <button
+                                                  onClick={() => printLabValues(p, 'diaglab', diagLabEntries)}
+                                                  className="w-full mt-3 py-2 rounded-lg text-sm font-bold border border-blue-300 text-blue-700 bg-white hover:bg-blue-50"
+                                              >
+                                                🖨️ Print Diagnostic Lab Values
+                                              </button>
 
                                               <button
                                                   onClick={() => sendLabSection(p, 'diaglab')}
@@ -6036,6 +6465,117 @@ ${patient.followUpAdvice ? `
 
                       <div>
                         <label className="text-xs font-semibold text-gray-600 block mb-1">
+                          Left Logo (prints on left of hospital name)
+                        </label>
+                        <input
+                            type="file"
+                            accept="image/*"
+                            onChange={(e) => {
+                              const file = e.target.files[0];
+                              if (file) {
+                                const reader = new FileReader();
+                                reader.onloadend = () => {
+                                  updateHospitalInfo('logoLeft', reader.result);
+                                };
+                                reader.readAsDataURL(file);
+                              }
+                            }}
+                            className="w-full border rounded-lg p-2 text-sm bg-white"
+                        />
+                        {hospitalInfo.logoLeft && (
+                            <div className="mt-2 flex items-center gap-3">
+                              <img
+                                  src={hospitalInfo.logoLeft}
+                                  alt="Left Logo Preview"
+                                  className="h-14 border rounded p-1 bg-white object-contain"
+                              />
+                              <button
+                                  type="button"
+                                  onClick={() => updateHospitalInfo('logoLeft', '')}
+                                  className="text-xs text-red-600 font-semibold hover:underline"
+                              >
+                                Remove Logo
+                              </button>
+                            </div>
+                        )}
+                      </div>
+
+                      <div>
+                        <label className="text-xs font-semibold text-gray-600 block mb-1">
+                          Right Logo (prints on right of hospital name)
+                        </label>
+                        <input
+                            type="file"
+                            accept="image/*"
+                            onChange={(e) => {
+                              const file = e.target.files[0];
+                              if (file) {
+                                const reader = new FileReader();
+                                reader.onloadend = () => {
+                                  updateHospitalInfo('logoRight', reader.result);
+                                };
+                                reader.readAsDataURL(file);
+                              }
+                            }}
+                            className="w-full border rounded-lg p-2 text-sm bg-white"
+                        />
+                        {hospitalInfo.logoRight && (
+                            <div className="mt-2 flex items-center gap-3">
+                              <img
+                                  src={hospitalInfo.logoRight}
+                                  alt="Right Logo Preview"
+                                  className="h-14 border rounded p-1 bg-white object-contain"
+                              />
+                              <button
+                                  type="button"
+                                  onClick={() => updateHospitalInfo('logoRight', '')}
+                                  className="text-xs text-red-600 font-semibold hover:underline"
+                              >
+                                Remove Logo
+                              </button>
+                            </div>
+                        )}
+                      </div>
+
+                      <div>
+                        <label className="text-xs font-semibold text-gray-600 block mb-1">
+                          Background Watermark Image (light image behind print content)
+                        </label>
+                        <input
+                            type="file"
+                            accept="image/*"
+                            onChange={(e) => {
+                              const file = e.target.files[0];
+                              if (file) {
+                                const reader = new FileReader();
+                                reader.onloadend = () => {
+                                  updateHospitalInfo('backgroundImage', reader.result);
+                                };
+                                reader.readAsDataURL(file);
+                              }
+                            }}
+                            className="w-full border rounded-lg p-2 text-sm bg-white"
+                        />
+                        {hospitalInfo.backgroundImage && (
+                            <div className="mt-2 flex items-center gap-3">
+                              <img
+                                  src={hospitalInfo.backgroundImage}
+                                  alt="Background Watermark Preview"
+                                  className="h-14 border rounded p-1 bg-white object-contain"
+                              />
+                              <button
+                                  type="button"
+                                  onClick={() => updateHospitalInfo('backgroundImage', '')}
+                                  className="text-xs text-red-600 font-semibold hover:underline"
+                              >
+                                Remove Background
+                              </button>
+                            </div>
+                        )}
+                      </div>
+
+                      <div>
+                        <label className="text-xs font-semibold text-gray-600 block mb-1">
                           Doctor Digital Signature
                         </label>
                         <input
@@ -6100,6 +6640,87 @@ ${patient.followUpAdvice ? `
                           <button onClick={addWard} className="bg-gray-800 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-900">+ Add Ward</button>
                         </div>
                         <p className="text-xs text-gray-400 mt-2">Total Wards: {(hospitalInfo.wards || []).length} • Total Capacity: {(hospitalInfo.wards || []).reduce((s, w) => s + w.capacity, 0)} beds</p>
+                      </div>
+
+                      <div className="border-t pt-4">
+                        <label className="text-xs font-semibold text-gray-700 uppercase block mb-2">Departments Available at This Hospital</label>
+                        <div className="space-y-2 max-h-96 overflow-y-auto">
+                          {(hospitalInfo.departments && hospitalInfo.departments.length ? hospitalInfo.departments
+                                  : DEPARTMENTS.map(name => ({ name, active: false, doctorName: '', doctorSign: '' }))
+                          ).map((dept, idx) => (
+                              <div key={dept.name} className="border rounded-lg p-3 bg-gray-50">
+                                <div className="flex items-center justify-between mb-2">
+                                  <label className="flex items-center gap-2 font-medium text-sm text-gray-800">
+                                    <input type="checkbox" checked={dept.active}
+                                           onChange={(e) => setHospitalInfo(prev => {
+                                             const depts = prev.departments && prev.departments.length ? [...prev.departments]
+                                                 : DEPARTMENTS.map(name => ({ name, active: false, doctorName: '', doctorSign: '' }));
+                                             depts[idx] = { ...depts[idx], active: e.target.checked };
+                                             return { ...prev, departments: depts };
+                                           })}
+                                    />
+                                    {dept.name}
+                                  </label>
+                                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${dept.active ? 'bg-green-100 text-green-700' : 'bg-gray-200 text-gray-500'}`}>
+                                  {dept.active ? 'Available' : 'Not Available'}
+                                </span>
+                                </div>
+                                {dept.active && (
+                                    <div className="space-y-2">
+                                      {((dept.doctors && dept.doctors.length > 0)
+                                              ? dept.doctors
+                                              : (dept.doctorName ? [{ name: dept.doctorName, sign: dept.doctorSign, days: [] }] : [])
+                                      ).map((doc, docIdx) => (
+                                          <div key={doc.id || docIdx} className="border rounded-lg p-2.5 bg-white space-y-2">
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                              <input type="text" placeholder="Doctor / Unit Name (e.g., Dr. Kju - Unit 1)"
+                                                     value={doc.name || ''}
+                                                     onChange={(e) => updateDeptDoctor(idx, docIdx, 'name', e.target.value)}
+                                                     className="border rounded-lg px-2 py-1.5 text-sm" />
+                                              <input type="file" accept="image/*"
+                                                     onChange={(e) => {
+                                                       const file = e.target.files[0];
+                                                       if (!file) return;
+                                                       const reader = new FileReader();
+                                                       reader.onloadend = () => updateDeptDoctor(idx, docIdx, 'sign', reader.result);
+                                                       reader.readAsDataURL(file);
+                                                     }}
+                                                     className="border rounded-lg p-1.5 text-xs bg-white" />
+                                            </div>
+                                            <div className="flex flex-wrap items-center gap-1">
+                                              <span className="text-[10px] font-bold text-gray-400 uppercase mr-1">Days:</span>
+                                              {WEEKDAYS.map(day => (
+                                                  <button
+                                                      key={day}
+                                                      type="button"
+                                                      onClick={() => toggleDeptDoctorDay(idx, docIdx, day)}
+                                                      className={`text-[10px] font-semibold px-2 py-1 rounded-full border ${
+                                                          (doc.days || []).includes(day)
+                                                              ? 'bg-indigo-600 text-white border-indigo-600'
+                                                              : 'bg-white text-gray-500 border-gray-300'
+                                                      }`}
+                                                  >
+                                                    {day.slice(0, 3)}
+                                                  </button>
+                                              ))}
+                                              <span className="text-[10px] text-gray-400 ml-1">(koi day select na kare to hammesha on-duty ganase)</span>
+                                              <button onClick={() => removeDeptDoctor(idx, docIdx)} className="text-red-400 hover:text-red-600 ml-auto p-1">
+                                                <Trash2 size={13}/>
+                                              </button>
+                                            </div>
+                                          </div>
+                                      ))}
+                                      <button
+                                          onClick={() => addDeptDoctor(idx)}
+                                          className="text-xs font-semibold text-indigo-600 hover:text-indigo-800 flex items-center gap-1"
+                                      >
+                                        <Plus size={13}/> Add Doctor / Unit for {dept.name}
+                                      </button>
+                                    </div>
+                                )}
+                              </div>
+                          ))}
+                        </div>
                       </div>
 
                       <p className="text-xs text-gray-400">This information appears on all printed prescriptions and bills.</p>
