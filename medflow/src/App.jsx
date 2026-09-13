@@ -1489,6 +1489,19 @@ You MUST return your response as a valid JSON object matching exactly this schem
   const [newPatientDepartment, setNewPatientDepartment] = useState('General Medicine');
   const [newPatientVisitType, setNewPatientVisitType] = useState('OPD'); // 'OPD' | 'Emergency'
   const [doctorVisitTypeFilter, setDoctorVisitTypeFilter] = useState('All');
+  // NEW: referral queue helper — badha patients mathi pending/active referrals collect kare
+  const getReferralQueue = () => {
+    const list = [];
+    patients.forEach(p => {
+      (p.referrals || []).forEach(ref => {
+        if (ref.status === 'Transferred') return;
+        if (doctorDeptFilter !== 'All' && ref.toDept !== doctorDeptFilter) return;
+        if (doctorTabDoctorFilter !== 'All' && ref.toDoctor && ref.toDoctor !== doctorTabDoctorFilter) return;
+        list.push({ patient: p, referral: ref });
+      });
+    });
+    return list;
+  };
   const [doctorDeptFilter, setDoctorDeptFilter] = useState('All');
   const [doctorDeptSearch, setDoctorDeptSearch] = useState('');
   const [newPatientOccupation, setNewPatientOccupation] = useState('');
@@ -1616,6 +1629,7 @@ You MUST return your response as a valid JSON object matching exactly this schem
   const [showReferralForm, setShowReferralForm] = useState(false);
   const [referralDeptSearch, setReferralDeptSearch] = useState('');
   const [referralTargetDept, setReferralTargetDept] = useState('');
+  const [referralTargetDoctor, setReferralTargetDoctor] = useState('');
   const [referralReason, setReferralReason] = useState('');
   const [referralAdviceInputs, setReferralAdviceInputs] = useState({}); // { [referralId]: text }
   const [symptomDurations, setSymptomDurations] = useState({});
@@ -3031,6 +3045,7 @@ Keep the tone formal, clinical, and concise. Return ONLY the discharge summary a
     const newReferral = {
       id: Date.now() + Math.random(),
       toDept: referralTargetDept,
+      toDoctor: referralTargetDoctor || '',
       reason: referralReason.trim(),
       requestedAt: new Date().toLocaleString('en-IN'),
       status: 'Pending',
@@ -3041,6 +3056,7 @@ Keep the tone formal, clinical, and concise. Return ONLY the discharge summary a
     updatePatientInDb(patient.dbId, { referrals: updated });
     setShowReferralForm(false);
     setReferralTargetDept('');
+    setReferralTargetDoctor('');
     setReferralReason('');
     setReferralDeptSearch('');
   };
@@ -4083,12 +4099,12 @@ ${patient.followUpAdvice ? `
 
                     {receptionSubTab === 'admission' && (
                         <div className="space-y-4">
-                          <div className="bg-white p-4 rounded-xl border shadow-sm">
+                          <div className="bg-white p-2 rounded-xl border shadow-sm">
                             <h3 className="text-lg font-bold text-gray-800">Admission Desk</h3>
                             <p className="text-xs text-gray-500">Complete billing / package formalities for patients sent here by the doctor, then assign a ward to move them to IPD.</p>
                           </div>
 
-                          <div className="bg-white p-3 rounded-xl border shadow-sm flex items-center gap-2">
+                          <div className="bg-white p-1 rounded-xl border shadow-sm flex items-center gap-2">
                             <Search size={16} className="text-gray-400 shrink-0"/>
                             <input
                                 type="text"
@@ -4169,12 +4185,12 @@ ${patient.followUpAdvice ? `
               {/* --- NURSING STATION TAB --- */}
               {activeTab === 'nursing' && (
                   <div className="max-w-5xl mx-auto space-y-6">
-                    <div className="bg-white p-4 rounded-xl border shadow-sm">
-                      <h3 className="text-lg font-bold text-gray-800">Nursing Station</h3>
+                    <div className="bg-white p-1 rounded-xl border shadow-sm">
+                      <h1 className="text-lg font-bold text-gray-800">Nursing Station</h1>
                       <p className="text-xs text-gray-500">Record vitals and assess patients before forwarding to the
                         Medical Officer.</p>
                     </div>
-                    <div className="bg-white p-3 rounded-xl border shadow-sm flex items-center gap-2">
+                    <div className="bg-white p-1 rounded-xl border shadow-sm flex items-center gap-2">
                       <Search size={16} className="text-gray-400 shrink-0"/>
                       <input
                           type="text"
@@ -4353,23 +4369,7 @@ ${patient.followUpAdvice ? `
                     {/* Department અને Search Bar ને બાજુ-બાજુમાં ગોઠવવા માટે */}
                     <div className="bg-white rounded-xl border shadow-sm p-1 flex items-center gap-3 flex-wrap">
 
-                      {/* 0. Visit Type Toggle */}
-                      <div className="flex items-center gap-1 shrink-0">
-                        <span className="text-xs font-semibold text-gray-500 uppercase">Type:</span>
-                        {['All', 'OPD', 'Emergency'].map(t => (
-                            <button key={t} onClick={() => setDoctorVisitTypeFilter(t)}
-                                    className={`px-2.5 py-1 rounded-full text-xs font-bold border ${
-                                        doctorVisitTypeFilter === t
-                                            ? (t === 'Emergency' ? 'bg-red-600 text-white border-red-600' : 'bg-gray-800 text-white border-gray-800')
-                                            : 'bg-white text-gray-600 border-gray-300'
-                                    }`}>
-                              {t === 'Emergency' ? '🚨 Emergency' : t}
-                            </button>
-                        ))}
-                      </div>
-                      <div className="h-6 w-px bg-gray-200"></div>
-
-                      {/* 1. Department Picker */}
+                      {/* 1. Department Picker (FIRST) */}
                       <div className="flex items-center gap-1 shrink-0">
                         <span className="text-xs font-semibold text-gray-500 uppercase">Department:</span>
                         <DepartmentPickerButton
@@ -4379,6 +4379,7 @@ ${patient.followUpAdvice ? `
                         />
                       </div>
 
+                      {/* 2. Doctor Name (SECOND — only shows once dept selected) */}
                       {doctorDeptFilter !== 'All' && (
                           <>
                             <div className="h-6 w-px bg-gray-200"></div>
@@ -4399,10 +4400,34 @@ ${patient.followUpAdvice ? `
                           </>
                       )}
 
-                      {/* 2. Divider Line */}
                       <div className="h-6 w-px bg-gray-200"></div>
 
-                      {/* 3. Search Box */}
+                      {/* 3. Visit Type / Reference (THIRD) */}
+                      <div className="flex items-center gap-1 shrink-0">
+                        <span className="text-xs font-semibold text-gray-500 uppercase">Type:</span>
+                        {['All', 'OPD', 'Emergency', 'Reference'].map(t => {
+                          const refCount = t === 'Reference' ? getReferralQueue().length : 0;
+                          return (
+                              <button key={t} onClick={() => setDoctorVisitTypeFilter(t)}
+                                      className={`px-2.5 py-1 rounded-full text-xs font-bold border flex items-center gap-1 ${
+                                          doctorVisitTypeFilter === t
+                                              ? (t === 'Emergency' ? 'bg-red-600 text-white border-red-600' : t === 'Reference' ? 'bg-purple-600 text-white border-purple-600' : 'bg-gray-800 text-white border-gray-800')
+                                              : 'bg-white text-gray-600 border-gray-300'
+                                      }`}>
+                                {t === 'Emergency' ? '🚨 Emergency' : t === 'Reference' ? '🔁 Reference' : t}
+                                {t === 'Reference' && refCount > 0 && (
+                                    <span className={`text-[9px] font-bold px-1.5 rounded-full ${doctorVisitTypeFilter === t ? 'bg-white/25' : 'bg-purple-100 text-purple-700'}`}>
+                  {refCount}
+                </span>
+                                )}
+                              </button>
+                          );
+                        })}
+                      </div>
+
+                      <div className="h-6 w-px bg-gray-200"></div>
+
+                      {/* 4. Search Box */}
                       <div className="flex items-center gap-2 flex-1">
                         <Search size={16} className="text-gray-400 shrink-0" />
                         <input
@@ -4415,6 +4440,9 @@ ${patient.followUpAdvice ? `
                       </div>
 
                     </div>
+
+                    {doctorVisitTypeFilter !== 'Reference' && (
+
                     <div
                         className="bg-white rounded-xl border shadow-sm p-1 flex flex-wrap gap-2 items-center overflow-x-auto">
                       <span className="text-xs font-semibold text-gray-400 uppercase px-2">Waiting:</span>
@@ -4440,8 +4468,128 @@ ${patient.followUpAdvice ? `
                           ))
                       )}
                     </div>
+                    )}
 
-                    {activePatient ? (
+                    {doctorVisitTypeFilter === 'Reference' ? (
+                        <div className="flex-1 overflow-y-auto space-y-4 pb-10">
+                          {getReferralQueue().length === 0 ? (
+                              <div className="bg-white p-10 rounded-xl border border-dashed border-gray-300 text-center text-gray-500">
+                                <ClipboardCheck className="w-12 h-12 mx-auto text-gray-300 mb-3"/>
+                                <p className="font-medium">No referrals pending{doctorDeptFilter !== 'All' ? ` for ${doctorDeptFilter}` : ''}.</p>
+                              </div>
+                          ) : (
+                              getReferralQueue().map(({ patient: p, referral: ref }) => (
+                                  <div key={ref.id} className="bg-white rounded-xl border shadow-sm overflow-hidden">
+                                    <div className="p-4 bg-purple-50 border-b flex justify-between items-start">
+                                      <div>
+                                        <h4 className="font-bold text-gray-900">{p.name} <span className="text-sm text-gray-500">({p.age}, {p.gender})</span></h4>
+                                        <p className="text-xs text-gray-500">{p.uhid} • From: <span className="font-semibold">{p.department}</span> → To: <span className="font-semibold text-purple-700">{ref.toDept}</span></p>
+                                        <p className="text-[10px] text-gray-400 mt-0.5">Referred: {ref.requestedAt}</p>
+                                      </div>
+                                      <span className={`text-[10px] font-bold px-2 py-1 rounded-full ${
+                                          ref.status === 'Pending' ? 'bg-yellow-100 text-yellow-700' :
+                                              ref.status === 'Answered' ? 'bg-green-100 text-green-700' :
+                                                  ref.status === 'Transfer Recommended' ? 'bg-red-100 text-red-700' :
+                                                      'bg-blue-100 text-blue-700'
+                                      }`}>{ref.status}</span>
+                                    </div>
+
+                                    <div className="p-4 space-y-3">
+                                      <div className="bg-gray-50 rounded-lg p-3 border">
+                                        <h5 className="text-xs font-bold text-gray-500 uppercase mb-1">Referral Question</h5>
+                                        <p className="text-sm text-gray-800">{ref.reason}</p>
+                                      </div>
+
+                                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                        <div className="bg-gray-50 rounded-lg p-3 border">
+                                          <h5 className="text-xs font-bold text-gray-500 uppercase mb-1">Chief Complaint</h5>
+                                          <p className="text-sm text-gray-800">{p.complaint || 'Not recorded'}</p>
+                                        </div>
+                                        <div className="bg-gray-50 rounded-lg p-3 border">
+                                          <h5 className="text-xs font-bold text-gray-500 uppercase mb-1">Vitals</h5>
+                                          {p.vitals ? (
+                                              <p className="text-sm text-gray-800">BP {p.vitals.bp} • Pulse {p.vitals.pulse} • Temp {p.vitals.temp} • SpO2 {p.vitals.spo2}</p>
+                                          ) : <p className="text-sm text-gray-400 italic">Not recorded</p>}
+                                        </div>
+                                      </div>
+
+                                      <div className="bg-gray-50 rounded-lg p-3 border">
+                                        <h5 className="text-xs font-bold text-gray-500 uppercase mb-1">Symptoms</h5>
+                                        <p className="text-sm text-gray-800">{(p.savedSymptoms || []).map(s => s.name).join(', ') || 'Not recorded'}</p>
+                                      </div>
+
+                                      <div className="bg-gray-50 rounded-lg p-3 border">
+                                        <h5 className="text-xs font-bold text-gray-500 uppercase mb-1">Manual History</h5>
+                                        <p className="text-sm text-gray-800">{p.savedManualHistory || 'Not documented'}</p>
+                                      </div>
+
+                                      {p.diagnoses && p.diagnoses.length > 0 && (
+                                          <div className="bg-indigo-50 rounded-lg p-3 border border-indigo-100">
+                                            <h5 className="text-xs font-bold text-indigo-600 uppercase mb-1">Current Diagnosis</h5>
+                                            <p className="text-sm text-indigo-900 font-medium">{p.diagnoses.join(', ')}</p>
+                                          </div>
+                                      )}
+
+                                      {p.labResults && (
+                                          <div className="bg-yellow-50 rounded-lg p-3 border border-yellow-200">
+                                            <h5 className="text-xs font-bold text-yellow-700 uppercase mb-1">Lab Results</h5>
+                                            <p className="text-sm text-gray-800 whitespace-pre-wrap">{p.labResults}</p>
+                                          </div>
+                                      )}
+
+                                      {ref.advice && (
+                                          <div className="bg-green-50 rounded-lg p-3 border border-green-200">
+                                            <h5 className="text-xs font-bold text-green-700 uppercase mb-1">Advice Already Given</h5>
+                                            <p className="text-sm text-gray-800">{ref.advice}</p>
+                                          </div>
+                                      )}
+
+                                      {ref.status === 'Pending' && (
+                                          <div className="space-y-2 pt-2 border-t">
+                                            <label className="text-xs font-bold text-gray-500 uppercase">Your Response</label>
+                                            <textarea
+                                                value={referralAdviceInputs[ref.id] || ''}
+                                                onChange={(e) => setReferralAdviceInputs(prev => ({ ...prev, [ref.id]: e.target.value }))}
+                                                placeholder={`Reply as ${ref.toDept} specialist — suggestion, advice, or opinion...`}
+                                                rows={3}
+                                                className="w-full border rounded-lg px-3 py-2 text-sm"
+                                            />
+                                            <div className="flex gap-2">
+                                              <button onClick={() => sendReferralAdvice(p, ref.id)} className="flex-1 bg-green-600 text-white py-2 rounded-lg text-sm font-semibold hover:bg-green-700">
+                                                Send Advice / Suggestion
+                                              </button>
+                                              <button onClick={() => recommendReferralTransfer(p, ref.id)} className="flex-1 bg-red-600 text-white py-2 rounded-lg text-sm font-semibold hover:bg-red-700">
+                                                Recommend Transfer to {ref.toDept}
+                                              </button>
+                                            </div>
+                                          </div>
+                                      )}
+
+                                      {ref.status === 'Transfer Recommended' && (
+                                          <div className="flex gap-2 pt-2 border-t">
+                                            <button onClick={() => acceptReferralTransfer(p, ref.id)} className="flex-1 bg-red-600 text-white py-2 rounded-lg text-sm font-semibold hover:bg-red-700">
+                                              Accept & Transfer to {ref.toDept}
+                                            </button>
+                                            <button onClick={() => dismissReferralTransfer(p, ref.id)} className="flex-1 bg-gray-200 text-gray-700 py-2 rounded-lg text-sm font-semibold hover:bg-gray-300">
+                                              Keep in Current Department
+                                            </button>
+                                          </div>
+                                      )}
+
+                                      {ref.status === 'Answered' && (
+                                          <button
+                                              onClick={() => { setSelectedPatientId(p.id); setDoctorVisitTypeFilter('All'); }}
+                                              className="w-full bg-indigo-600 text-white py-2 rounded-lg text-sm font-semibold hover:bg-indigo-700"
+                                          >
+                                            Open Patient in Full Consultation
+                                          </button>
+                                      )}
+                                    </div>
+                                  </div>
+                              ))
+                          )}
+                        </div>
+                    ) : activePatient ? (
                         <div className="flex-1 grid grid-cols-1 lg:grid-cols-4 gap-6 overflow-hidden min-h-0">
                           {/* Left Column: Patient Profile & Workflow Steps */}
                           <div className="lg:col-span-1 flex flex-col gap-4 overflow-y-auto pr-2 pb-10 lg:pb-0">
@@ -4537,9 +4685,38 @@ ${patient.followUpAdvice ? `
                                     <DepartmentPickerButton
                                         selected={referralTargetDept}
                                         options={activeDepartmentNames}
-                                        onSelect={setReferralTargetDept}
+                                        onSelect={(d) => { setReferralTargetDept(d); setReferralTargetDoctor(''); }}
                                         placeholder="Choose department"
                                     />
+
+                                    {referralTargetDept && (
+                                        <div>
+                                          <label className="text-[10px] font-bold text-indigo-500 uppercase block mb-1">Select Doctor (optional — leave blank for whole department)</label>
+                                          <div className="flex flex-wrap gap-1.5">
+                                            <button
+                                                type="button"
+                                                onClick={() => setReferralTargetDoctor('')}
+                                                className={`px-2.5 py-1 rounded-full text-xs font-bold border ${!referralTargetDoctor ? 'bg-gray-800 text-white border-gray-800' : 'bg-white text-gray-600 border-gray-300'}`}
+                                            >
+                                              Any / Whole Dept
+                                            </button>
+                                            {getDoctorListForDept(referralTargetDept).filter(d => d.name).map(doc => (
+                                                <button
+                                                    type="button"
+                                                    key={doc.name}
+                                                    onClick={() => setReferralTargetDoctor(doc.name)}
+                                                    className={`px-2.5 py-1 rounded-full text-xs font-bold border ${referralTargetDoctor === doc.name ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-gray-600 border-gray-300'}`}
+                                                >
+                                                  {doc.name}
+                                                </button>
+                                            ))}
+                                            {getDoctorListForDept(referralTargetDept).length === 0 && (
+                                                <p className="text-[11px] text-gray-400 italic">No doctors configured for this department.</p>
+                                            )}
+                                          </div>
+                                        </div>
+                                    )}
+
                                     <textarea
                                         value={referralReason}
                                         onChange={(e) => setReferralReason(e.target.value)}
@@ -4552,7 +4729,7 @@ ${patient.followUpAdvice ? `
                                         disabled={!referralTargetDept || !referralReason.trim()}
                                         className="w-full bg-indigo-600 text-white py-1.5 rounded-lg text-xs font-bold disabled:opacity-40"
                                     >
-                                      Send Referral to {referralTargetDept || '...'}
+                                      Send Referral to {referralTargetDoctor || referralTargetDept || '...'}
                                     </button>
                                   </div>
                               )}
@@ -4564,7 +4741,9 @@ ${patient.followUpAdvice ? `
                                     {activePatient.referrals.map(ref => (
                                         <div key={ref.id} className="border rounded-lg p-2.5 bg-gray-50">
                                           <div className="flex justify-between items-start mb-1">
-                                            <span className="text-xs font-bold text-gray-800">{ref.toDept}</span>
+                                            <span className="text-xs font-bold text-gray-800">
+  {ref.toDept}{ref.toDoctor ? ` — Dr. ${ref.toDoctor}` : ''}
+</span>
                                             <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${
                                                 ref.status === 'Pending' ? 'bg-yellow-100 text-yellow-700' :
                                                     ref.status === 'Answered' ? 'bg-green-100 text-green-700' :
@@ -7034,7 +7213,7 @@ ${patient.followUpAdvice ? `
               {/* --- PHARMACY TAB --- */}
               {activeTab === 'pharmacy' && (
                   <div className="max-w-5xl mx-auto space-y-6">
-                    <div className="bg-white p-4 rounded-xl border shadow-sm flex items-center gap-3">
+                    <div className="bg-white p-1 rounded-xl border shadow-sm flex items-center gap-3">
                       <div className="bg-purple-100 p-2 rounded-lg text-purple-600">
                         <Pill size={24}/>
                       </div>
@@ -7044,7 +7223,7 @@ ${patient.followUpAdvice ? `
                           patients.</p>
                       </div>
                     </div>
-                    <div className="bg-white p-3 rounded-xl border shadow-sm flex items-center gap-2">
+                    <div className="bg-white p-1 rounded-xl border shadow-sm flex items-center gap-2">
                       <Search size={16} className="text-gray-400 shrink-0"/>
                       <input
                           type="text"
