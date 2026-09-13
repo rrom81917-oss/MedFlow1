@@ -526,6 +526,7 @@ function DepartmentPickerButton({ selected, options, onSelect, placeholder = 'Al
 export default function MedFlowApp() {
 
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [currentRole, setCurrentRole] = useState(null); // { role, fullName, hospitalId, hospitalName, tabs }
   const [authLoading, setAuthLoading] = useState(true);
 
@@ -550,6 +551,8 @@ export default function MedFlowApp() {
     logoRight: "",
     backgroundImage: "",
     departments: [],
+    assignmentMode: "Automatic", // "Automatic" | "Selective"
+    oddEvenEnabled: false,
   });
 
   const updateHospitalInfo = (field, value) => {
@@ -573,6 +576,8 @@ export default function MedFlowApp() {
               logoRight: data.logo_right || '',
               backgroundImage: data.background_image || '',
               wards: data.wards || [],
+              assignmentMode: data.assignment_mode || "Automatic",
+              oddEvenEnabled: data.odd_even_enabled || false,
 
               departments: (() => {
                 const saved = (data.departments && data.departments.length) ? data.departments : [];
@@ -602,6 +607,8 @@ export default function MedFlowApp() {
       background_image: hospitalInfo.backgroundImage,
       wards: hospitalInfo.wards,
       departments: hospitalInfo.departments,
+      assignment_mode: hospitalInfo.assignmentMode,
+      odd_even_enabled: hospitalInfo.oddEvenEnabled,
     });
     if (error) alert('Could not save settings: ' + error.message);
     else alert('Settings saved successfully.');
@@ -628,7 +635,7 @@ export default function MedFlowApp() {
       const doctors = dept.doctors && dept.doctors.length > 0
           ? [...dept.doctors]
           : (dept.doctorName ? [{ name: dept.doctorName, sign: dept.doctorSign, days: [] }] : []);
-      doctors.push({ id: Date.now() + Math.random(), name: '', sign: '', days: [] });
+      doctors.push({ id: Date.now() + Math.random(), name: '', sign: '', dutySlots: [] });
       depts[deptIdx] = { ...dept, doctors };
       return { ...prev, departments: depts };
     });
@@ -657,6 +664,46 @@ export default function MedFlowApp() {
       const currentDays = (doctors[docIdx] || {}).days || [];
       const newDays = currentDays.includes(day) ? currentDays.filter(d => d !== day) : [...currentDays, day];
       doctors[docIdx] = { ...(doctors[docIdx] || {}), days: newDays };
+      depts[deptIdx] = { ...dept, doctors };
+      return { ...prev, departments: depts };
+    });
+  };
+
+  const addDutySlot = (deptIdx, docIdx) => {
+    setHospitalInfo(prev => {
+      const depts = [...prev.departments];
+      const dept = depts[deptIdx];
+      const doctors = [...(dept.doctors || [])];
+      const doc = doctors[docIdx] || {};
+      const slots = [...(doc.dutySlots || [])];
+      slots.push({ id: Date.now() + Math.random(), day: 'Monday', type: 'OPD', start: '09:00', end: '13:00' });
+      doctors[docIdx] = { ...doc, dutySlots: slots };
+      depts[deptIdx] = { ...dept, doctors };
+      return { ...prev, departments: depts };
+    });
+  };
+
+  const updateDutySlot = (deptIdx, docIdx, slotId, field, value) => {
+    setHospitalInfo(prev => {
+      const depts = [...prev.departments];
+      const dept = depts[deptIdx];
+      const doctors = [...(dept.doctors || [])];
+      const doc = doctors[docIdx] || {};
+      const slots = (doc.dutySlots || []).map(s => s.id === slotId ? { ...s, [field]: value } : s);
+      doctors[docIdx] = { ...doc, dutySlots: slots };
+      depts[deptIdx] = { ...dept, doctors };
+      return { ...prev, departments: depts };
+    });
+  };
+
+  const removeDutySlot = (deptIdx, docIdx, slotId) => {
+    setHospitalInfo(prev => {
+      const depts = [...prev.departments];
+      const dept = depts[deptIdx];
+      const doctors = [...(dept.doctors || [])];
+      const doc = doctors[docIdx] || {};
+      const slots = (doc.dutySlots || []).filter(s => s.id !== slotId);
+      doctors[docIdx] = { ...doc, dutySlots: slots };
       depts[deptIdx] = { ...dept, doctors };
       return { ...prev, departments: depts };
     });
@@ -706,30 +753,113 @@ export default function MedFlowApp() {
       ? hospitalInfo.departments.filter(d => d.active).map(d => d.name)
       : DEPARTMENTS;
 
+  const getDoctorDutySlots = (doc) => {
+    if (doc.dutySlots && doc.dutySlots.length > 0) return doc.dutySlots;
+    // Juna data format (single days[]/dutyType/startTime/endTime) hoy to slots ma convert karo
+    if (doc.days && doc.days.length > 0) {
+      return doc.days.map(day => ({ day, type: doc.dutyType || 'Both', start: doc.startTime || '', end: doc.endTime || '' }));
+    }
+    return [{ day: 'All', type: doc.dutyType || 'Both', start: doc.startTime || '', end: doc.endTime || '' }];
+  };
+
+  const isTimeInRange = (start, end) => {
+    if (!start || !end) return true; // time set na kari hoy to hammesha valid
+    const now = new Date();
+    const cur = now.getHours() * 60 + now.getMinutes();
+    const [sh, sm] = start.split(':').map(Number);
+    const [eh, em] = end.split(':').map(Number);
+    const s = sh * 60 + sm, e = eh * 60 + em;
+    if (s <= e) return cur >= s && cur <= e;
+    return cur >= s || cur <= e; // overnight duty (e.g. 20:00-08:00)
+  };
+
+  const doctorOnDutyNow = (doc, visitType) => {
+    const todayName = WEEKDAYS[new Date().getDay()];
+    return getDoctorDutySlots(doc).some(slot => {
+      const dayOk = !slot.day || slot.day === 'All' || slot.day === todayName;
+      const typeOk = !slot.type || slot.type === 'Both' || slot.type === visitType;
+      const timeOk = isTimeInRange(slot.start, slot.end);
+      return dayOk && typeOk && timeOk;
+    });
+  };
+
+  const doctorOnDutyNowAnyType = (doc) => {
+    const todayName = WEEKDAYS[new Date().getDay()];
+    return getDoctorDutySlots(doc).some(slot => {
+      const dayOk = !slot.day || slot.day === 'All' || slot.day === todayName;
+      const timeOk = isTimeInRange(slot.start, slot.end);
+      return dayOk && timeOk;
+    });
+  };
+
+  const resolveDutyDoctor = (deptName, visitType = 'OPD') => {
+    const d = (hospitalInfo.departments || []).find(x => x.name === deptName);
+    const doctorList = d
+        ? ((d.doctors && d.doctors.length > 0) ? d.doctors : (d.doctorName ? [{ name: d.doctorName, sign: d.doctorSign }] : []))
+        : [];
+    if (doctorList.length === 0) return { doctorName: hospitalInfo.doctorName, doctorSign: hospitalInfo.doctorSign };
+
+    const eligible = doctorList.filter(doc => doctorOnDutyNow(doc, visitType));
+    const pool = eligible.length > 0 ? eligible : doctorList;
+
+    let chosen = pool[0];
+    if (pool.length > 1 && hospitalInfo.oddEvenEnabled) {
+      // Load-balance: aa slot ma jena naam sathi sauthi ochha active patients
+      // assign thaya hoy tene next patient aapo (odd-even jevo automatic vahenchvano)
+      const counts = pool.map(doc => patients.filter(p => p.assignedDoctor === doc.name && p.status !== 'Discharged').length);
+      let minIdx = 0;
+      for (let i = 1; i < counts.length; i++) if (counts[i] < counts[minIdx]) minIdx = i;
+      chosen = pool[minIdx];
+    }
+    return { doctorName: chosen.name || hospitalInfo.doctorName, doctorSign: chosen.sign || hospitalInfo.doctorSign, allDoctors: doctorList };
+  };
+
   const getDeptInfo = (deptName) => {
     const d = (hospitalInfo.departments || []).find(x => x.name === deptName);
     if (!d) return { doctorName: hospitalInfo.doctorName, doctorSign: hospitalInfo.doctorSign };
 
-    // Juna single-doctor data (doctorName/doctorSign) ane nava multi-doctor (doctors array) — banne support
     const doctorList = (d.doctors && d.doctors.length > 0)
         ? d.doctors
-        : (d.doctorName ? [{ name: d.doctorName, sign: d.doctorSign, days: [] }] : []);
+        : (d.doctorName ? [{ name: d.doctorName, sign: d.doctorSign }] : []);
 
     if (doctorList.length === 0) {
       return { doctorName: hospitalInfo.doctorName, doctorSign: hospitalInfo.doctorSign };
     }
 
-    const todayName = WEEKDAYS[new Date().getDay()];
-    // 1) aaje na day mate scheduled doctor, 2) je doctor e koi day fix na karyo hoy (hammesha on-duty), 3) list no pehlo doctor
-    const todaysDoctor = doctorList.find(doc => (doc.days || []).includes(todayName));
-    const alwaysOnDoctor = doctorList.find(doc => !doc.days || doc.days.length === 0);
-    const chosen = todaysDoctor || alwaysOnDoctor || doctorList[0];
+    const eligible = doctorList.filter(doc => doctorOnDutyNowAnyType(doc));
+    const chosen = eligible[0] || doctorList[0];
 
     return {
       doctorName: chosen.name || hospitalInfo.doctorName,
       doctorSign: chosen.sign || hospitalInfo.doctorSign,
       allDoctors: doctorList,
     };
+  };
+
+  const getDoctorListForDept = (deptName) => {
+    const d = (hospitalInfo.departments || []).find(x => x.name === deptName);
+    if (!d) return [];
+    return (d.doctors && d.doctors.length > 0) ? d.doctors : (d.doctorName ? [{ name: d.doctorName, pin: d.doctorPin }] : []);
+  };
+
+  const selectDoctorFilterWithPin = (filterKey, deptName, doctorName, setFilterFn) => {
+    if (doctorName === 'All') { setFilterFn('All'); return; }
+    if (doctorFilterUnlocked[filterKey] === doctorName) { setFilterFn(doctorName); return; }
+    const docObj = getDoctorListForDept(deptName).find(d => d.name === doctorName);
+    const requiredPin = docObj?.pin;
+    if (!requiredPin) {
+      setFilterFn(doctorName);
+      setDoctorFilterUnlocked(prev => ({ ...prev, [filterKey]: doctorName }));
+      return;
+    }
+    const entered = window.prompt(`Enter PIN to view ${doctorName}'s patients:`);
+    if (entered === null) return;
+    if (entered === requiredPin) {
+      setFilterFn(doctorName);
+      setDoctorFilterUnlocked(prev => ({ ...prev, [filterKey]: doctorName }));
+    } else {
+      alert('Incorrect PIN.');
+    }
   };
 
   const runExamSuggestionEngine = async () => {
@@ -1124,7 +1254,8 @@ You MUST return your response as a valid JSON object matching exactly this schem
 
   const ipdPatientMatchesFilters = (p) => {
     if (ipdDeptFilter !== 'All' && p.department !== ipdDeptFilter) return false;
-    if (ipdDoctorFilter !== 'All' && getDeptInfo(p.department).doctorName !== ipdDoctorFilter) return false;
+    const effectiveDoctor = p.ipdDoctorName || getDeptInfo(p.department).doctorName;
+    if (ipdDoctorFilter !== 'All' && effectiveDoctor !== ipdDoctorFilter) return false;
     return true;
   };
   const [ipdPrinted, setIpdPrinted] = useState({});
@@ -1140,7 +1271,7 @@ You MUST return your response as a valid JSON object matching exactly this schem
       <p style="font-size:13px;"><b>Vitals:</b><br/>${vitalsLogStr}</p>
       <p style="font-size:13px;"><b>Medications:</b> ${(day.meds || []).map(m => `${m.name} (${m.dosage}, ${m.duration})`).join('; ') || 'None'}</p>
       <p style="font-size:13px;"><b>Advice:</b> ${(day.advice || []).map(a => a.text).join('; ') || 'None'}</p>
-      <p style="font-size:13px;"><b>Procedures:</b> ${(day.procedures || []).map(pr => pr.text).join('; ') || 'None'}</p>
+        <p style="font-size:13px;"><b>Procedures:</b> ${(day.procedures || []).map(pr => `${pr.text}${pr.outcome ? ` (${pr.outcome})` : ''}`).join('; ') || 'None'}</p>
     </div>
   `;
     }).join('');
@@ -1277,7 +1408,10 @@ You MUST return your response as a valid JSON object matching exactly this schem
   const mapDbPatientToUi = (row) => ({
     id: row.display_id, dbId: row.id, name: row.name, age: row.age, gender: row.gender,
     uhid: row.uhid, triage: row.triage, status: row.status, occupation: row.occupation,
-    address: row.address, insuranceId: row.insurance_id, contact: row.contact,
+    address: row.address,
+    insuranceId: row.insurance_id, contact: row.contact,
+    email: row.email || '', whatsappOptIn: row.whatsapp_opt_in !== false,
+    assignedDoctor: row.assigned_doctor || '',
     department: row.department || 'General Medicine',
     complaint: row.complaint, vitals: row.vitals, diagnoses: row.diagnoses,
     prescriptions: row.prescriptions, savedSymptoms: row.saved_symptoms,
@@ -1306,14 +1440,21 @@ You MUST return your response as a valid JSON object matching exactly this schem
     admissionProcedure: row.admission_procedure || '',
     admissionExpectedDays: row.admission_expected_days || '',
     admissionBillingNote: row.admission_billing_note || '',
+    visitType: row.visit_type || 'OPD',
+    ipdDoctorName: row.ipd_doctor_name || '',
+    ipdDepartment: row.ipd_department || '',
+    deliveryDetails: row.delivery_details || null,
   });
 
   const fetchPatients = async () => {
     if (!currentRole?.hospitalId) return;
+    // Discharged patient normally list mathi nikadi jay che — SIVAY jyare tena lab test
+    // hju pending hoy, athva report have j aavyu hoy ane doctor review baki hoy.
+    // Evi condition ma patient ne list ma rakhi rakho (Lab tab / Doctor follow-up mate).
     const { data, error } = await supabase
         .from('patients').select('*')
         .eq('hospital_id', currentRole.hospitalId)
-        .neq('status', 'Discharged')
+        .or('status.neq.Discharged,lab_status.eq.Pending,pending_doctor_review.eq.true')
         .order('created_at', { ascending: false });
     if (!error) setPatients(data.map(mapDbPatientToUi));
   };
@@ -1346,17 +1487,35 @@ You MUST return your response as a valid JSON object matching exactly this schem
   const [newPatientGender, setNewPatientGender] = useState('male');
   const [newPatientTriage, setNewPatientTriage] = useState('GREEN');
   const [newPatientDepartment, setNewPatientDepartment] = useState('General Medicine');
+  const [newPatientVisitType, setNewPatientVisitType] = useState('OPD'); // 'OPD' | 'Emergency'
+  const [doctorVisitTypeFilter, setDoctorVisitTypeFilter] = useState('All');
   const [doctorDeptFilter, setDoctorDeptFilter] = useState('All');
   const [doctorDeptSearch, setDoctorDeptSearch] = useState('');
   const [newPatientOccupation, setNewPatientOccupation] = useState('');
+  const [newPatientSelectedDoctor, setNewPatientSelectedDoctor] = useState('');
+  const [doctorSearchAtReception, setDoctorSearchAtReception] = useState('');
   const [followUpUhid, setFollowUpUhid] = useState("");
   const [followUpPreview, setFollowUpPreview] = useState(null); // { isDischarged, lastVisitDate, diagnoses, dischargeOutcome, dischargeSummary }
   const [newPatientAddress, setNewPatientAddress] = useState('');
   const [newPatientInsuranceId, setNewPatientInsuranceId] = useState('');
   const [newPatientContact, setNewPatientContact] = useState('');
+  const [newPatientEmail, setNewPatientEmail] = useState('');
+  const [newPatientWhatsapp, setNewPatientWhatsapp] = useState(true);
   const [receptionSearch, setReceptionSearch] = useState('');
-  const [receptionSubTab, setReceptionSubTab] = useState('registration'); // 'registration' | 'admission'
+  const [admissionSearch, setAdmissionSearch] = useState('');
+  const [reviewSearch, setReviewSearch] = useState('');
+  const [reviewDeptFilter, setReviewDeptFilter] = useState('All');
+  const [reviewDoctorFilter, setReviewDoctorFilter] = useState('All');
+  const [doctorFilterUnlocked, setDoctorFilterUnlocked] = useState({});
+  const [doctorTabDoctorFilter, setDoctorTabDoctorFilter] = useState('All');
+  const [nursingDoctorFilter, setNursingDoctorFilter] = useState('All');
+  const [dashboardType, setDashboardType] = useState(null);
+  const [dashboardDept, setDashboardDept] = useState(null);
+  const [dashboardPatient, setDashboardPatient] = useState(null);
+  const [dashboardStatusOverride, setDashboardStatusOverride] = useState('');
+  const [receptionSubTab, setReceptionSubTab] = useState('opd'); // 'opd' | 'emergency' | 'admission'
   const [nursingSearch, setNursingSearch] = useState('');
+  const [nursingBifurcation, setNursingBifurcation] = useState('All'); // 'All' | 'Emergency' | <dept name>
   const [nursingExpandedIds, setNursingExpandedIds] = useState({});
   const toggleNursingExpanded = (patientId) => {
     setNursingExpandedIds(prev => ({ ...prev, [patientId]: !prev[patientId] }));
@@ -1377,6 +1536,7 @@ You MUST return your response as a valid JSON object matching exactly this schem
   const [ipdVitalInputs, setIpdVitalInputs] = useState({});         // { [patientId]: { bp, pulse, temp, spo2 } }
   const [ipdInvestigationInputs, setIpdInvestigationInputs] = useState({}); // { [patientId]: string }
   const [ipdDrugRequestInputs, setIpdDrugRequestInputs] = useState({}); // { [patientId]: string }
+  const [deliveryFormInputs, setDeliveryFormInputs] = useState({}); // { [patientId]: draft }
   const [ipdNurseSearch, setIpdNurseSearch] = useState('');
   const [ipdNurseWardFilter, setIpdNurseWardFilter] = useState('All');
   const [ipdNurseExpandedIds, setIpdNurseExpandedIds] = useState({});
@@ -1476,6 +1636,8 @@ You MUST return your response as a valid JSON object matching exactly this schem
   const [routeOverride, setRouteOverride] = useState(null); // doctor's manual override
   const [showWardModal, setShowWardModal] = useState(false);
   const [selectedWardForAdmission, setSelectedWardForAdmission] = useState('');
+  const [admissionSelectedDept, setAdmissionSelectedDept] = useState('');
+  const [admissionSelectedDoctor, setAdmissionSelectedDoctor] = useState('');
   const [pendingIpdFinish, setPendingIpdFinish] = useState(false);
   const [wardAdmissionPatient, setWardAdmissionPatient] = useState(null);
   const [showAdmissionRequestModal, setShowAdmissionRequestModal] = useState(false);
@@ -1705,6 +1867,7 @@ You MUST return your response as a valid JSON object matching exactly this schem
             complaint: newPatientOccupation || 'Follow-up visit',
             triage: newPatientTriage,
             department: newPatientDepartment,
+            visitType: newPatientVisitType,
             vitals: null,
             savedSymptoms: [],
             savedNegativeHistory: [],
@@ -1772,6 +1935,7 @@ You MUST return your response as a valid JSON object matching exactly this schem
             complaint: resetPatch.complaint,
             department: newPatientDepartment,
             triage: newPatientTriage,
+            visit_type: newPatientVisitType,
             vitals: null,
             saved_symptoms: [],
             saved_negative_history: [],
@@ -1846,11 +2010,13 @@ You MUST return your response as a valid JSON object matching exactly this schem
         name: newPatientName, age: `${newPatientAge}y`, gender: newPatientGender,
         uhid: newUhid,
         triage: newPatientTriage, status: 'Nursing', department: newPatientDepartment,
+        visit_type: newPatientVisitType,
         occupation: newPatientOccupation || '', address: newPatientAddress || '',
         insurance_id: newPatientInsuranceId || '', contact: newPatientContact || '',
+        email: newPatientEmail || '', whatsapp_opt_in: newPatientWhatsapp,
+        assigned_doctor: newPatientSelectedDoctor || '',
         vitals: null,
       }).select().single();
-
       if (error) {
         console.error('Patient registration failed:', error);
         alert(`Could not register patient: ${error.message}`);
@@ -1864,6 +2030,11 @@ You MUST return your response as a valid JSON object matching exactly this schem
       setNewPatientAddress('');
       setNewPatientInsuranceId('');
       setNewPatientContact('');
+      setNewPatientEmail('');
+      setNewPatientWhatsapp(true);
+      setNewPatientVisitType('OPD');
+      setNewPatientSelectedDoctor('');
+      setDoctorSearchAtReception('');
       setShowAddPatientModal(false);
     } finally {
       setIsSubmittingPatient(false);
@@ -1881,14 +2052,24 @@ You MUST return your response as a valid JSON object matching exactly this schem
     }));
   };
 
+  const updatePatientTriage = (patientId, triage) => {
+    const target = patients.find(p => p.id === patientId);
+    setPatients(patients.map(p => p.id === patientId ? { ...p, triage } : p));
+    if (target) updatePatientInDb(target.dbId, { triage });
+  };
+
   const forwardToDoctor = (patientId) => {
     const defaultVitals = { bp: '120/80', pulse: '78', temp: '98.6', spo2: '98' };
     const vitals = vitalInputs[patientId] || patients.find(p => p.id === patientId)?.vitals || defaultVitals;
 
     const target = patients.find(p => p.id === patientId);
-    setPatients(patients.map(p => p.id === patientId ? { ...p, status: 'Doctor', vitals } : p));
-    updatePatientInDb(target.dbId, { status: 'Doctor', vitals });
-
+    // Selective mode ma reception vakhte j doctor select thai gayo hoy to e j vaparo,
+    // baki Automatic mode ma duty (day/time/OPD-Emergency) pramane resolve karo.
+    const assignedDoc = target?.assignedDoctor
+        ? target.assignedDoctor
+        : (resolveDutyDoctor(target?.department, target?.visitType || 'OPD').doctorName || '');
+    setPatients(patients.map(p => p.id === patientId ? { ...p, status: 'Doctor', vitals, assignedDoctor: assignedDoc } : p));
+    updatePatientInDb(target.dbId, { status: 'Doctor', vitals, assigned_doctor: assignedDoc });
 
     setVitalInputs(prev => {
       const newState = {...prev};
@@ -2088,6 +2269,7 @@ Based on the complete patient summary above (symptoms, manual history, negative 
       savedAiResult: aiResult,
       savedSelectedDdx: selectedDdx,
     };
+
     setPatients(patients.map(p => p.id === activePatient.id ? { ...p, ...patch } : p));
     updatePatientInDb(activePatient.dbId, {
       status: 'Doctor',
@@ -2101,7 +2283,11 @@ Based on the complete patient summary above (symptoms, manual history, negative 
       saved_ai_result: patch.savedAiResult,
       saved_selected_ddx: patch.savedSelectedDdx,
     });
-    setSelectedPatientId(null);
+    // Patient ne DE-select nathi karvano — nahi to consult panel band thai jay ane
+    // patient "gayab thai gayo" evu lage. Patient list ma j rehse (status: 'Doctor'),
+    // ane doctor labs pending review kari continue kari sake che.
+    setSelectedAiLabs([]);
+    alert(`Sent for lab: ${selectedAiLabs.join(', ')}. Patient stays in your queue — you can continue documenting.`);
   };
 
   const sendToLab = () => {
@@ -2323,6 +2509,28 @@ Based on the complete patient summary above (symptoms, manual history, negative 
     updatePatientInDb(patient.dbId, { daily_orders: updatedDays });
   };
 
+  const getDeliveryDraft = (patientId) => deliveryFormInputs[patientId] || {
+    modeOfDelivery: '', dateTime: '', babySex: '', birthWeight: '',
+    apgar1min: '', apgar5min: '', motherCondition: '', babyCondition: '', notes: '',
+  };
+
+  const setDeliveryField = (patientId, field, value) => {
+    setDeliveryFormInputs(prev => ({
+      ...prev,
+      [patientId]: { ...getDeliveryDraft(patientId), [field]: value },
+    }));
+  };
+
+  const saveDeliveryDetails = (patient) => {
+    const draft = getDeliveryDraft(patient.id);
+    if (!draft.modeOfDelivery && !draft.dateTime) {
+      alert('Please fill at least Mode of Delivery and Date/Time before saving.');
+      return;
+    }
+    setPatients(prev => prev.map(p => p.id === patient.id ? { ...p, deliveryDetails: draft } : p));
+    updatePatientInDb(patient.dbId, { delivery_details: draft });
+    alert('Delivery / Birth details saved — Discharge Summary ma Birth Note automatically banse.');
+  };
   const toggleIpdExpanded = (patientId) => {
     setIpdExpandedIds(prev => ({ ...prev, [patientId]: !prev[patientId] }));
   };
@@ -2446,6 +2654,15 @@ Based on the complete patient summary above (symptoms, manual history, negative 
     saveIpdDailyOrders(patient, updatedDays);
   };
 
+  const setIpdProcedureOutcome = (patient, dayId, procedureId, field, value) => {
+    const updatedDays = (patient.dailyOrders || []).map(d =>
+        d.id === dayId
+            ? { ...d, procedures: (d.procedures || []).map(pr => pr.id === procedureId ? { ...pr, [field]: value } : pr) }
+            : d
+    );
+    saveIpdDailyOrders(patient, updatedDays);
+  };
+
   const openDischargeModal = (patient) => {
     setDischargePatient(patient);
     setDischargeStep(1);
@@ -2481,7 +2698,7 @@ Based on the complete patient summary above (symptoms, manual history, negative 
     const daysSummary = (dischargePatient.dailyOrders || []).map(day => {
       const medsStr = (day.meds || []).map(m => `${m.name} (${m.dosage}, ${m.duration})`).join('; ') || 'None';
       const adviceStr = (day.advice || []).map(a => a.text).join('; ') || 'None';
-      const procStr = (day.procedures || []).map(pr => pr.text).join('; ') || 'None';
+      const procStr = (day.procedures || []).map(pr => `${pr.text}${pr.outcome ? ` [Outcome: ${pr.outcome}${pr.outcomeNotes ? ' — ' + pr.outcomeNotes : ''}]` : ' [Outcome: not recorded]'}`).join('; ') || 'None';
       const vitalsLogStr = (day.vitalsLog || []).map(v => `${v.time}: BP ${v.bp}, Pulse ${v.pulse}, Temp ${v.temp}, SpO2 ${v.spo2}`).join(' | ') || 'Not recorded';
       return `${day.label}${day.date ? ` (${day.date})` : ''}: Vitals[${vitalsLogStr}]; Medications[${medsStr}]; Advice[${adviceStr}]; Procedures[${procStr}]`;
     }).join('\n');
@@ -2513,13 +2730,24 @@ Day-wise Hospital Course:
 ${daysSummary || 'Not recorded'}
 Discharge Outcome: ${dischargeOutcome}.
 ${consentStr}
+${dischargePatient.deliveryDetails ? `
+Delivery / Birth Details (structured, doctor-entered — use these exact values for the Delivery Note & Outcome section):
+Mode of Delivery: ${dischargePatient.deliveryDetails.modeOfDelivery || 'Not recorded'}
+Date & Time of Delivery: ${dischargePatient.deliveryDetails.dateTime || 'Not recorded'}
+Baby Sex: ${dischargePatient.deliveryDetails.babySex || 'Not recorded'}
+Birth Weight: ${dischargePatient.deliveryDetails.birthWeight || 'Not recorded'} kg
+Apgar Score: ${dischargePatient.deliveryDetails.apgar1min || 'NR'} (1 min), ${dischargePatient.deliveryDetails.apgar5min || 'NR'} (5 min)
+Condition of Mother: ${dischargePatient.deliveryDetails.motherCondition || 'Not recorded'}
+Condition of Baby: ${dischargePatient.deliveryDetails.babyCondition || 'Not recorded'}
+Additional Notes: ${dischargePatient.deliveryDetails.notes || 'None'}
+` : ''}
 
 Generate a complete, professional Discharge Summary including:
 1. Chief Complaint & Presenting History (use the chief complaint, symptoms, and manual history given above)
 2. Examination & Investigation Findings (brief summary of what was found on admission)
 3. Final Diagnosis/Provisional Diagnosis
-4. Brief Hospital Course (chronological narrative referencing the day-wise data)
-5. [IF APPLICABLE - FOR OBGY / SURGICAL PATIENTS ONLY]: Include a dedicated subsection/section for "Procedure Summary" (detailing any surgeries performed, intraoperative findings, and procedure course) OR "Delivery Note & Outcome" (detailing the mode of delivery, date/time, fetal outcome, sex of the baby, Apgar scores, and condition of the mother). Skip this section if the patient is neither surgical nor OBGY.
+4. Brief Hospital Course (chronological narrative referencing the day-wise data — explicitly mention whether each procedure performed was successful or had a complication, based on the recorded outcome)
+5. [IF APPLICABLE - FOR OBGY / SURGICAL PATIENTS ONLY]: Include a dedicated subsection/section for "Procedure Summary" (detailing any surgeries performed, intraoperative findings, and procedure course) OR "Delivery Note & Outcome" (detailing the mode of delivery, date/time, fetal outcome, sex of the baby, birth weight, Apgar scores, and condition of the mother and baby). If structured Delivery/Birth Details are provided below, you MUST include the "Delivery Note & Outcome" section using that exact data — do not omit it and do not invent different values. Skip this whole section only if the patient is neither surgical nor OBGY and no delivery details are provided.
 6. Discharge Medications (clean list with dosage & duration; include tapering schedule if doses changed across days). Mention the given/pending administration status provided above as a brief note.
 7. Condition at Discharge (based on latest vitals and outcome)
 8. Advice & Follow-up Instructions (in both English and Gujarati, clear and patient-friendly)
@@ -2648,6 +2876,39 @@ Keep the tone formal, clinical, and concise. Return ONLY the discharge summary a
     `);
     printWindow.document.close();
     printWindow.print();
+  };
+
+  const buildWhatsappLink = (contact, text) => {
+    const digits = (contact || '').replace(/\D/g, '');
+    const withCountry = digits.length === 10 ? `91${digits}` : digits;
+    return `https://wa.me/${withCountry}?text=${encodeURIComponent(text)}`;
+  };
+
+  const shareDischargeSummary = (patient) => {
+    const text = `Discharge Summary for ${patient.name} (${patient.uhid})\n\nDiagnosis: ${(patient.diagnoses || []).join(', ') || 'N/A'}\n\n${(patient.dischargeSummary || '').slice(0, 800)}\n\n- ${hospitalInfo.name}`;
+    if (patient.whatsappOptIn && patient.contact) {
+      window.open(buildWhatsappLink(patient.contact, text), '_blank');
+    } else if (patient.email) {
+      window.location.href = `mailto:${patient.email}?subject=${encodeURIComponent('Discharge Summary - ' + patient.name)}&body=${encodeURIComponent(text)}`;
+    } else if (patient.contact) {
+      window.location.href = `sms:${patient.contact}?&body=${encodeURIComponent(text)}`;
+    } else {
+      alert('No contact number or email available for this patient.');
+    }
+  };
+
+  const sharePrescription = (patient) => {
+    const medsStr = (patient.prescriptions || []).map(m => `${m.name} (${m.dosage}, ${m.duration})`).join('; ') || 'None';
+    const text = `Prescription for ${patient.name} (${patient.uhid})\n\nDiagnosis: ${(patient.diagnoses || []).join(', ') || 'N/A'}\nMedicines: ${medsStr}\nAdvice: ${patient.followUpAdvice || '-'}\n\n- ${hospitalInfo.name}`;
+    if (patient.whatsappOptIn && patient.contact) {
+      window.open(buildWhatsappLink(patient.contact, text), '_blank');
+    } else if (patient.email) {
+      window.location.href = `mailto:${patient.email}?subject=${encodeURIComponent('Prescription - ' + patient.name)}&body=${encodeURIComponent(text)}`;
+    } else if (patient.contact) {
+      window.location.href = `sms:${patient.contact}?&body=${encodeURIComponent(text)}`;
+    } else {
+      alert('No contact number or email available for this patient.');
+    }
   };
 
   const IPD_DEFAULT_VITALS = { bp: '120/80', pulse: '78', temp: '98.6', spo2: '98' };
@@ -2849,9 +3110,10 @@ Keep the tone formal, clinical, and concise. Return ONLY the discharge summary a
     const finalRoute = routeOverride ? routeOverride : (ivIndicated ? 'IPD' : 'OPD');
 
     if (finalRoute === 'IPD') {
-      // Ward hવે doctor ma nathi nakki thatu — pehla Admission Desk ne procedure + expected indoor days aapo
       setAdmissionProcedureText('');
       setAdmissionExpectedDays('');
+      setAdmissionSelectedDept(activePatient.department || '');
+      setAdmissionSelectedDoctor(getDeptInfo(activePatient.department).doctorName || '');
       setShowAdmissionRequestModal(true);
       return;
     }
@@ -2862,6 +3124,8 @@ Keep the tone formal, clinical, and concise. Return ONLY the discharge summary a
   const completeConsultation = (finalRoute, chosenWard) => {
     if (!activePatient) return;
     const nextStatus = finalRoute === 'IPD' ? 'IPD' : (finalRoute === 'Admission' ? 'Admission' : 'Pharmacy');
+    const hasPendingLab = (activePatient.investigationsOrdered || []).some(inv => !(activePatient.completedTests || []).includes(inv));
+    const labStatusPatch = hasPendingLab ? 'Pending' : activePatient.labStatus;
 
     let dailyOrdersPatch = activePatient.dailyOrders || [];
     const admittedAtPatch = (nextStatus === 'IPD' && !activePatient.admittedAt) ? new Date().toISOString() : activePatient.admittedAt;
@@ -2899,11 +3163,15 @@ Keep the tone formal, clinical, and concise. Return ONLY the discharge summary a
           prescriptions: prescriptions,
           nonPharmManagement: nonPharmManagement,
           followUpAdvice: followUpAdvice,
+          labStatus: labStatusPatch,
           dailyOrders: dailyOrdersPatch,
           admittedAt: admittedAtPatch,
           ward: wardPatch,
           admissionProcedure: nextStatus === 'Admission' ? admissionProcedureText : p.admissionProcedure,
           admissionExpectedDays: nextStatus === 'Admission' ? admissionExpectedDays : p.admissionExpectedDays,
+          department: nextStatus === 'Admission' ? (admissionSelectedDept || p.department) : p.department,
+          ipdDoctorName: nextStatus === 'Admission' ? admissionSelectedDoctor : p.ipdDoctorName,
+          ipdDepartment: nextStatus === 'Admission' ? admissionSelectedDept : p.ipdDepartment,
         };
       }
       return p;
@@ -2915,9 +3183,16 @@ Keep the tone formal, clinical, and concise. Return ONLY the discharge summary a
       daily_orders: dailyOrdersPatch,
       non_pharm_management: nonPharmManagement,
       follow_up_advice: followUpAdvice,
+      lab_status: labStatusPatch,
       admitted_at: admittedAtPatch,
       ward: wardPatch,
-      ...(nextStatus === 'Admission' ? { admission_procedure: admissionProcedureText, admission_expected_days: admissionExpectedDays } : {}),
+      ...(nextStatus === 'Admission' ? {
+        admission_procedure: admissionProcedureText,
+        admission_expected_days: admissionExpectedDays,
+        department: admissionSelectedDept || activePatient.department,
+        ipd_doctor_name: admissionSelectedDoctor,
+        ipd_department: admissionSelectedDept,
+      } : {}),
     });
 
     setSelectedPatientId(null);
@@ -2933,6 +3208,8 @@ Keep the tone formal, clinical, and concise. Return ONLY the discharge summary a
     setShowAdmissionRequestModal(false);
     setAdmissionProcedureText('');
     setAdmissionExpectedDays('');
+    setAdmissionSelectedDept('');
+    setAdmissionSelectedDoctor('');
   };
 
     // --- Pharmacy Actions ---
@@ -2948,8 +3225,12 @@ Keep the tone formal, clinical, and concise. Return ONLY the discharge summary a
   };
 
   const markAsDischarged = (patient) => {
-    setPatients(prev => prev.map(p => p.id === patient.id ? { ...p, status: 'Discharged' } : p));
-    updatePatientInDb(patient.dbId, { status: 'Discharged' });
+    const hasPendingLab = (patient.investigationsOrdered || []).some(inv => !(patient.completedTests || []).includes(inv));
+    setPatients(prev => prev.map(p => p.id === patient.id ? { ...p, status: 'Discharged', labStatus: hasPendingLab ? 'Pending' : p.labStatus } : p));
+    updatePatientInDb(patient.dbId, { status: 'Discharged', lab_status: hasPendingLab ? 'Pending' : patient.labStatus });
+    if (hasPendingLab) {
+      alert('Note: pending lab investigations baaki che — aa patient Laboratory tab ma dekhaato rahese report na aave tya sudhi.');
+    }
   };
 
   const updateStock = async (id, newStock) => {
@@ -3119,38 +3400,49 @@ ${patient.followUpAdvice ? `
   };
 
   // --- Admission Desk: ward assignment (used by Reception, not tied to doctor's activePatient) ---
+
   const openWardModalForAdmission = (patient) => {
     setWardAdmissionPatient(patient);
     setSelectedWardForAdmission('');
+    const dept = patient.ipdDepartment || patient.department || '';
+    setAdmissionSelectedDept(dept);
+    setAdmissionSelectedDoctor(patient.ipdDoctorName || getDeptInfo(dept).doctorName || '');
     setShowWardModal(true);
   };
 
   const confirmWardAdmission = () => {
     if (!wardAdmissionPatient || !selectedWardForAdmission) return;
     const admittedAt = new Date().toISOString();
+    const finalDept = admissionSelectedDept || wardAdmissionPatient.department;
     setPatients(prev => prev.map(p => p.id === wardAdmissionPatient.id
-        ? { ...p, status: 'IPD', admittedAt, ward: selectedWardForAdmission }
+        ? { ...p, status: 'IPD', admittedAt, ward: selectedWardForAdmission, department: finalDept, ipdDoctorName: admissionSelectedDoctor, ipdDepartment: finalDept }
         : p
     ));
     updatePatientInDb(wardAdmissionPatient.dbId, {
       status: 'IPD',
       admitted_at: admittedAt,
       ward: selectedWardForAdmission,
+      department: finalDept,
+      ipd_doctor_name: admissionSelectedDoctor,
+      ipd_department: finalDept,
     });
     setShowWardModal(false);
     setWardAdmissionPatient(null);
     setSelectedWardForAdmission('');
+    setAdmissionSelectedDept('');
+    setAdmissionSelectedDoctor('');
   };
-
-    const SidebarItem = ({icon: Icon, label, id, step}) => (
-        <button onClick={() => setActiveTab(id)}
-                className={`w-full flex items-center px-4 py-3 text-sm font-medium transition-colors ${activeTab === id ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-slate-700 hover:text-white'}`}>
-          <div
-              className={`w-6 h-6 rounded flex items-center justify-center mr-3 text-xs ${activeTab === id ? 'bg-blue-500' : 'bg-slate-700'}`}>{step}</div>
-          <Icon size={16} className="mr-2"/>
-          {label}
-        </button>
-    );
+  const SidebarItem = ({icon: Icon, label, id, step}) => (
+      <button onClick={() => setActiveTab(id)} title={label}
+              className={`w-full flex items-center ${sidebarCollapsed ? 'justify-center px-0 py-3' : 'px-4 py-3'} text-sm font-medium transition-colors ${activeTab === id ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-slate-700 hover:text-white'}`}>
+        {!sidebarCollapsed && (
+            <div
+                className={`w-6 h-6 rounded flex items-center justify-center mr-3 text-xs ${activeTab === id ? 'bg-blue-500' : 'bg-slate-700'}`}>{step}</div>
+        )}
+        <Icon size={16} className={sidebarCollapsed ? '' : 'mr-2'}/>
+        {!sidebarCollapsed && label}
+      </button>
+  );
 
   if (!isLoggedIn) {
     return (
@@ -3194,14 +3486,23 @@ ${patient.followUpAdvice ? `
     return (
         <div className="flex h-screen bg-gray-100 font-sans">
           {/* Sidebar */}
-          <div className="w-32 bg-[#1e2330] flex flex-col justify-between text-white flex-shrink-0 shadow-lg z-10 md:flex">
-            <div className="p-3 flex items-center space-x-2 border-b border-slate-700">
-              <Activity className="text-blue-400 w-4 h-6"/>
-              <div>
-                <h1 className="font-bold text-lg leading-tight">MedFlow AI</h1>
-                <p className="text-xs text-slate-400"> AI Hospital Made by dr.PR</p>
-              </div>
+          <div className={`${sidebarCollapsed ? 'w-14' : 'w-42'} bg-[#1e2330] flex flex-col justify-between text-white flex-shrink-0 shadow-lg z-10 md:flex transition-all duration-200`}>
+            <div className="p-3 flex items-center gap-2 border-b border-slate-700">
+              <button onClick={() => setSidebarCollapsed(prev => !prev)}
+                      className="w-8 h-8 flex flex-col items-center justify-center gap-1 rounded hover:bg-slate-700 shrink-0"
+                      title={sidebarCollapsed ? 'Expand menu' : 'Collapse menu'}>
+                <span className="w-4 h-0.5 bg-white rounded"></span>
+                <span className="w-4 h-0.5 bg-white rounded"></span>
+                <span className="w-4 h-0.5 bg-white rounded"></span>
+              </button>
+              {!sidebarCollapsed && (
+                  <div>
+                    <h1 className="font-bold text-lg leading-tight">MedFlow AI</h1>
+                    <p className="text-xs text-slate-400"> AI Hospital Made by dr.PR</p>
+                  </div>
+              )}
             </div>
+
             <div className="flex-1 py-4 space-y-1">
               {currentRole?.tabs?.includes('reception') && (
                   <SidebarItem step="1" icon={Users} label="Reception" id="reception" />
@@ -3233,13 +3534,16 @@ ${patient.followUpAdvice ? `
                   <SidebarItem step="6" icon={Settings} label="Settings" id="settings"/>
               )}
             </div>
-            <div className="p-4 border-t border-slate-700 mt-auto">
-              <div className="text-xs text-slate-400 mb-2">Logged in as: <span className="font-semibold text-white">{currentRole?.fullName}</span></div>
+            <div className="p-2 border-t border-slate-700 mt-auto">
+              {!sidebarCollapsed && (
+                  <div className="text-xs text-slate-400 mb-2 px-2">Logged in as: <span className="font-semibold text-white">{currentRole?.fullName}</span></div>
+              )}
               <button
                   onClick={handleLogout}
-                  className="w-full bg-red-600 text-white text-sm py-2 rounded-lg font-semibold"
+                  title="Logout"
+                  className="w-full bg-red-600 text-white text-sm py-2 rounded-lg font-semibold flex items-center justify-center gap-1"
               >
-                Logout
+                <LogOut size={14}/>{!sidebarCollapsed && 'Logout'}
               </button>
             </div>
           </div>
@@ -3270,42 +3574,165 @@ ${patient.followUpAdvice ? `
               {/* --- RECEPTION TAB --- */}
               {activeTab === 'reception' && (
                   <div className="max-w-5xl mx-auto space-y-6">
+
                     <div className="bg-white p-3 rounded-xl border shadow-sm flex flex-wrap gap-2 items-center">
                       <button
-                          onClick={() => setReceptionSubTab('registration')}
-                          className={`px-4 py-2 rounded-lg text-sm font-semibold border ${receptionSubTab === 'registration' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-300 hover:border-blue-300'}`}
+                          onClick={() => setReceptionSubTab('opd')}
+                          className={`px-4 py-2 rounded-lg text-sm font-semibold border ${receptionSubTab === 'opd' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-300 hover:border-blue-300'}`}
                       >
-                        Registration Desk
+                        OPD Registration
+                      </button>
+                      <button
+                          onClick={() => setReceptionSubTab('emergency')}
+                          className={`px-4 py-2 rounded-lg text-sm font-semibold border flex items-center gap-2 ${receptionSubTab === 'emergency' ? 'bg-red-600 text-white border-red-600' : 'bg-white text-gray-600 border-gray-300 hover:border-red-300'}`}
+                      >
+                        🚨 Emergency Registration
                       </button>
                       <button
                           onClick={() => setReceptionSubTab('admission')}
-                          className={`px-4 py-2 rounded-lg text-sm font-semibold border flex items-center gap-2 ${receptionSubTab === 'admission' ? 'bg-red-600 text-white border-red-600' : 'bg-white text-gray-600 border-gray-300 hover:border-red-300'}`}
+                          className={`px-4 py-2 rounded-lg text-sm font-semibold border flex items-center gap-2 ${receptionSubTab === 'admission' ? 'bg-amber-600 text-white border-amber-600' : 'bg-white text-gray-600 border-gray-300 hover:border-amber-300'}`}
                       >
                         Admission Desk
                         {patients.filter(p => p.status === 'Admission').length > 0 && (
-                            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${receptionSubTab === 'admission' ? 'bg-white/20' : 'bg-red-100 text-red-700'}`}>
+                            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${receptionSubTab === 'admission' ? 'bg-white/20' : 'bg-amber-100 text-amber-700'}`}>
                               {patients.filter(p => p.status === 'Admission').length}
                             </span>
                         )}
                       </button>
-                    </div>
-
-                    {receptionSubTab === 'registration' && (
-                        <>
-                        <div
-                            className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-white p-4 rounded-xl border shadow-sm gap-4">
-                      <div>
-                        <h3 className="text-lg font-bold text-gray-800">OPD Patient Registration</h3>
-                        <p className="text-xs text-gray-500">Register incoming patients and route them to Nursing
-                          Station for triage.</p>
-                      </div>
                       <button
-                          onClick={() => setShowAddPatientModal(true)}
-                          className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 hover:bg-blue-700 shadow-sm w-full sm:w-auto justify-center"
+                          onClick={() => { setReceptionSubTab('dashboard'); setDashboardType(null); setDashboardDept(null); setDashboardPatient(null); }}
+                          className={`px-4 py-2 rounded-lg text-sm font-semibold border flex items-center gap-2 ${receptionSubTab === 'dashboard' ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-gray-600 border-gray-300 hover:border-slate-400'}`}
                       >
-                        <Plus size={16}/> Register New Patient
+                        📊 Dashboard
                       </button>
                     </div>
+
+                    {receptionSubTab === 'dashboard' && (
+                        <div className="space-y-4">
+                          <div className="bg-white p-4 rounded-xl border shadow-sm flex items-center gap-2 text-sm text-gray-500">
+                            <button onClick={() => { setDashboardType(null); setDashboardDept(null); setDashboardPatient(null); }} className="font-semibold text-indigo-600 hover:underline">All</button>
+                            {dashboardType && <><ChevronRight size={14}/><button onClick={() => { setDashboardDept(null); setDashboardPatient(null); }} className="font-semibold text-indigo-600 hover:underline">{dashboardType}</button></>}
+                            {dashboardDept && <><ChevronRight size={14}/><span className="font-semibold text-gray-700">{dashboardDept}</span></>}
+                          </div>
+
+                          {!dashboardType && (
+                              <div className="grid grid-cols-2 gap-4">
+                                {['OPD', 'Emergency'].map(type => {
+                                  const count = patients.filter(p => p.visitType === type && p.status !== 'Discharged').length;
+                                  return (
+                                      <button key={type} onClick={() => setDashboardType(type)}
+                                              className="bg-white p-6 rounded-xl border shadow-sm hover:shadow-md hover:border-indigo-300 text-left transition-all">
+                                        <p className="text-xs font-bold text-gray-400 uppercase">{type}</p>
+                                        <p className="text-3xl font-bold text-gray-800 mt-1">{count}</p>
+                                        <p className="text-xs text-gray-400 mt-1">active patients</p>
+                                      </button>
+                                  );
+                                })}
+                              </div>
+                          )}
+
+                          {dashboardType && !dashboardDept && (
+                              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+                                {activeDepartmentNames.map(dept => {
+                                  const count = patients.filter(p => p.visitType === dashboardType && p.department === dept && p.status !== 'Discharged').length;
+                                  if (count === 0) return null;
+                                  return (
+                                      <button key={dept} onClick={() => setDashboardDept(dept)}
+                                              className="bg-white p-4 rounded-xl border shadow-sm hover:shadow-md hover:border-indigo-300 text-left transition-all">
+                                        <p className="text-sm font-bold text-gray-800">{dept}</p>
+                                        <p className="text-xs text-gray-500 mt-1">👨‍⚕️ {getDeptInfo(dept).doctorName || 'Not assigned'}</p>
+                                        <p className="text-2xl font-bold text-indigo-600 mt-2">{count} <span className="text-xs font-normal text-gray-400">patients</span></p>
+                                      </button>
+                                  );
+                                })}
+                              </div>
+                          )}
+
+                          {dashboardType && dashboardDept && (
+                              <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
+                                <table className="w-full text-left border-collapse">
+                                  <thead>
+                                  <tr className="bg-gray-50 border-b text-xs font-bold text-gray-500 uppercase">
+                                    <th className="p-3">UHID</th><th className="p-3">Name</th><th className="p-3">Age/Gender</th><th className="p-3">Status</th><th className="p-3">Action</th>
+                                  </tr>
+                                  </thead>
+                                  <tbody className="divide-y">
+                                  {patients.filter(p => p.visitType === dashboardType && p.department === dashboardDept && p.status !== 'Discharged').map(p => (
+                                      <tr key={p.id} className="hover:bg-gray-50 text-sm">
+                                        <td className="p-3 font-semibold text-blue-600">{p.uhid}</td>
+                                        <td className="p-3">{p.name}</td>
+                                        <td className="p-3">{p.age} / {p.gender}</td>
+                                        <td className="p-3"><span className="px-2 py-1 rounded-full text-xs font-semibold bg-slate-100 text-slate-800">{p.status}</span></td>
+                                        <td className="p-3">
+                                          <button onClick={() => { setDashboardPatient(p); setDashboardStatusOverride(p.status); }} className="text-indigo-600 text-xs font-semibold hover:underline">View / Change Status</button>
+                                        </td>
+                                      </tr>
+                                  ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                          )}
+
+                          {dashboardPatient && (
+                              <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                                <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
+                                  <div className="flex justify-between items-start">
+                                    <div>
+                                      <h3 className="text-lg font-bold text-gray-900">{dashboardPatient.name}</h3>
+                                      <p className="text-xs text-gray-500">{dashboardPatient.uhid} • {dashboardPatient.age} • {dashboardPatient.gender}</p>
+                                    </div>
+                                    <button onClick={() => setDashboardPatient(null)} className="text-gray-400 hover:text-gray-600 text-xl">&times;</button>
+                                  </div>
+                                  <div className="text-sm space-y-1 bg-gray-50 rounded-lg p-3">
+                                    <p><b>Department:</b> {dashboardPatient.department}</p>
+                                    <p><b>Complaint:</b> {dashboardPatient.complaint || '-'}</p>
+                                    <p><b>Diagnosis:</b> {(dashboardPatient.diagnoses || []).join(', ') || '-'}</p>
+                                    <p><b>Contact:</b> {dashboardPatient.contact || '-'}</p>
+                                  </div>
+                                  <div>
+                                    <label className="text-xs font-bold text-gray-500 uppercase block mb-1">Change Status</label>
+                                    <select value={dashboardStatusOverride} onChange={(e) => setDashboardStatusOverride(e.target.value)} className="w-full border rounded-lg px-3 py-2 text-sm">
+                                      {['Nursing', 'Doctor', 'Admission', 'IPD', 'Pharmacy', 'Review', 'Discharged'].map(s => <option key={s} value={s}>{s}</option>)}
+                                    </select>
+                                  </div>
+                                  <button
+                                      onClick={() => {
+                                        setPatients(prev => prev.map(p => p.id === dashboardPatient.id ? { ...p, status: dashboardStatusOverride } : p));
+                                        updatePatientInDb(dashboardPatient.dbId, { status: dashboardStatusOverride });
+                                        setDashboardPatient(null);
+                                      }}
+                                      className="w-full bg-indigo-600 text-white py-2.5 rounded-lg text-sm font-bold hover:bg-indigo-700"
+                                  >
+                                    Update Status
+                                  </button>
+                                </div>
+                              </div>
+                          )}
+                        </div>
+                    )}
+
+                    {(receptionSubTab === 'opd' || receptionSubTab === 'emergency') && (
+                        <>
+                          <div
+                              className={`flex flex-col sm:flex-row justify-between items-start sm:items-center p-4 rounded-xl border shadow-sm gap-4 ${receptionSubTab === 'emergency' ? 'bg-red-50 border-red-200' : 'bg-white'}`}>
+                            <div>
+                              <h3 className="text-lg font-bold text-gray-800">
+                                {receptionSubTab === 'emergency' ? '🚨 Emergency Registration' : 'OPD Patient Registration'}
+                              </h3>
+                              <p className="text-xs text-gray-500">Register incoming patients and route them to Nursing
+                                Station for triage.</p>
+                            </div>
+                            <button
+                                onClick={() => {
+                                  setNewPatientVisitType(receptionSubTab === 'emergency' ? 'Emergency' : 'OPD');
+                                  setShowAddPatientModal(true);
+                                }}
+                                className={`px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 shadow-sm w-full sm:w-auto justify-center text-white ${receptionSubTab === 'emergency' ? 'bg-red-600 hover:bg-red-700' : 'bg-blue-600 hover:bg-blue-700'}`}
+                            >
+                              <Plus size={16}/> {receptionSubTab === 'emergency' ? 'Register Emergency Patient' : 'Register New Patient'}
+                            </button>
+                          </div>
+
                     <div className="bg-white p-3 rounded-xl border shadow-sm flex items-center gap-2">
                       <Search size={16} className="text-gray-400 shrink-0"/>
                       <input
@@ -3333,7 +3760,7 @@ ${patient.followUpAdvice ? `
                         </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100 text-sm text-gray-700">
-                        {patients.filter(p => p.status !== 'Discharged' && matchesSearch(p, receptionSearch)).map(p => (
+                        {patients.filter(p => p.status !== 'Discharged' && matchesSearch(p, receptionSearch) && p.visitType === (receptionSubTab === 'emergency' ? 'Emergency' : 'OPD')).map(p => (
                             <tr key={p.id} className="hover:bg-gray-50 transition-colors">
                               <td className="p-4 font-semibold text-blue-600 whitespace-nowrap">{p.uhid}</td>
                               <td className="p-4 font-medium text-gray-900">{p.name}</td>
@@ -3341,7 +3768,12 @@ ${patient.followUpAdvice ? `
                                   className="capitalize">{p.gender}</span></td>
                               <td className="p-4 text-gray-600 max-w-[200px] truncate">{p.occupation}</td>
                               <td className="p-4 text-gray-600 max-w-[200px] truncate">{p.address || '-'}</td>
-                              <td className="p-4"><span className="text-xs font-semibold bg-blue-50 text-blue-700 px-2 py-1 rounded">{p.department}</span></td>
+                              <td className="p-4">
+                                <span className="text-xs font-semibold bg-blue-50 text-blue-700 px-2 py-1 rounded">{p.department}</span>
+                                {p.visitType === 'Emergency' && (
+                                    <span className="ml-1 text-[10px] font-bold bg-red-600 text-white px-1.5 py-0.5 rounded">🚨 ER</span>
+                                )}
+                              </td>
                               <td className="p-4">
                           <span className={`text-[10px] font-bold px-2 py-1 rounded-full whitespace-nowrap ${
                               p.triage === 'RED' ? 'bg-red-100 text-red-700 border border-red-200' :
@@ -3422,7 +3854,6 @@ ${patient.followUpAdvice ? `
                                       className="w-full border rounded p-2 text-sm mt-1"
                                   />
                                   <p className="text-xs text-gray-400 mt-1">Leave blank for a new patient</p>
-
                                   {followUpPreview && (
                                       <div className={`mt-2 rounded-lg border p-3 text-xs ${followUpPreview.isDischarged ? 'bg-amber-50 border-amber-200' : 'bg-green-50 border-green-200'}`}>
                                         <div className="flex items-center justify-between mb-1.5">
@@ -3433,27 +3864,13 @@ ${patient.followUpAdvice ? `
                                               <span className="text-gray-400">{followUpPreview.lastVisitDate}</span>
                                           )}
                                         </div>
-                                        {followUpPreview.diagnoses && (
-                                            <p className="text-gray-700 mb-1"><b>Last Diagnosis:</b> {followUpPreview.diagnoses}</p>
-                                        )}
-                                        {followUpPreview.dischargeOutcome && (
-                                            <p className="text-gray-700 mb-1"><b>Discharge Outcome:</b> {followUpPreview.dischargeOutcome}</p>
-                                        )}
                                         {followUpPreview.isPendingDoctorReview && (
-                                            <p className="text-red-700 font-bold mb-1">⚠ New lab report has arrived since discharge — this visit will resume the previous case (symptoms/history preserved).</p>
+                                            <p className="text-red-700 font-bold mb-1">⚠ New lab report has arrived since discharge — full case history preserved for doctor.</p>
                                         )}
-                                        {followUpPreview.dischargeSummary ? (
-                                            <details className="mt-1">
-                                              <summary className="cursor-pointer font-semibold text-amber-700">View Previous Discharge Summary</summary>
-                                              <p className="text-gray-600 whitespace-pre-wrap mt-1 max-h-40 overflow-y-auto">{followUpPreview.dischargeSummary}</p>
-                                            </details>
-                                        ) : (
-                                            followUpPreview.isDischarged && (
-                                                <p className="text-gray-400 italic">No discharge summary recorded for last visit.</p>
-                                            )
-                                        )}
+                                        <p className="text-gray-400 italic">Old patient.</p>
                                       </div>
                                   )}
+
                                 </div>
                                 <label
                                     className="block text-xs font-semibold text-gray-700 mb-1.5 uppercase tracking-wide">Full
@@ -3497,33 +3914,61 @@ ${patient.followUpAdvice ? `
                               </div>
 
                               <div>
-                                <label
-                                    className="block text-xs font-semibold text-gray-700 mb-1.5 uppercase tracking-wide">Triage
-                                  Priority</label>
-                                <select
-                                    value={newPatientTriage}
-                                    onChange={e => setNewPatientTriage(e.target.value)}
-                                    className={`w-full border rounded-lg px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all ${
-                                        newPatientTriage === 'RED' ? 'bg-red-50 border-red-200 text-red-900' :
-                                            newPatientTriage === 'YELLOW' ? 'bg-yellow-50 border-yellow-200 text-yellow-900' :
-                                                'bg-green-50 border-green-200 text-green-900'
-                                    }`}
-                                >
-                                  <option value="GREEN">GREEN - Non-Urgent</option>
-                                  <option value="YELLOW">YELLOW - Urgent</option>
-                                  <option value="RED">RED - Emergency</option>
-                                </select>
+                                <label className="block text-xs font-semibold text-gray-700 mb-1.5 uppercase tracking-wide">Visit Type</label>
+                                <div className="grid grid-cols-2 gap-2">
+                                  <button type="button" onClick={() => setNewPatientVisitType('OPD')}
+                                          className={`px-3 py-2.5 rounded-lg text-sm font-bold border ${newPatientVisitType === 'OPD' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-300'}`}>
+                                    OPD (Routine)
+                                  </button>
+                                  <button type="button" onClick={() => setNewPatientVisitType('Emergency')}
+                                          className={`px-3 py-2.5 rounded-lg text-sm font-bold border ${newPatientVisitType === 'Emergency' ? 'bg-red-600 text-white border-red-600' : 'bg-white text-gray-600 border-gray-300'}`}>
+                                    🚨 Emergency
+                                  </button>
+                                </div>
                               </div>
+
+
                               <div>
                                 <label className="block text-xs font-semibold text-gray-700 mb-1.5 uppercase tracking-wide">Department</label>
+
                                 <select
                                     value={newPatientDepartment}
-                                    onChange={e => setNewPatientDepartment(e.target.value)}
+                                    onChange={e => { setNewPatientDepartment(e.target.value); setNewPatientSelectedDoctor(''); setDoctorSearchAtReception(''); }}
                                     className="w-full border border-gray-300 rounded-lg px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all bg-white"
                                 >
                                   {activeDepartmentNames.map(d => <option key={d} value={d}>{d}</option>)}
                                 </select>
                               </div>
+
+                              {hospitalInfo.assignmentMode === 'Selective' && (
+                                  <div>
+                                    <label className="block text-xs font-semibold text-gray-700 mb-1.5 uppercase tracking-wide">Select Doctor / Unit</label>
+                                    <input
+                                        type="text"
+                                        value={doctorSearchAtReception}
+                                        onChange={(e) => setDoctorSearchAtReception(e.target.value)}
+                                        placeholder="Search doctor name..."
+                                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mb-2"
+                                    />
+                                    <div className="flex flex-wrap gap-2 max-h-28 overflow-y-auto">
+                                      {getDoctorListForDept(newPatientDepartment)
+                                          .filter(d => d.name && d.name.toLowerCase().includes(doctorSearchAtReception.trim().toLowerCase()))
+                                          .map(doc => (
+                                              <button key={doc.name} type="button"
+                                                      onClick={() => setNewPatientSelectedDoctor(doc.name)}
+                                                      className={`px-3 py-1.5 rounded-full text-xs font-semibold border ${newPatientSelectedDoctor === doc.name ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-gray-600 border-gray-300 hover:border-indigo-300'}`}>
+                                                {doc.name}
+                                              </button>
+                                          ))}
+                                      {getDoctorListForDept(newPatientDepartment).length === 0 && (
+                                          <p className="text-xs text-gray-400 italic">No doctors configured for this department yet.</p>
+                                      )}
+                                    </div>
+                                    {!newPatientSelectedDoctor && (
+                                        <p className="text-[11px] text-amber-600 mt-1">⚠ Doctor select nahi karyu — automatic duty-based assign thase.</p>
+                                    )}
+                                  </div>
+                              )}
 
 
                               <div>
@@ -3557,6 +4002,32 @@ ${patient.followUpAdvice ? `
                                       placeholder="Policy / Insurance ID (optional)"
                                       className="w-full border border-gray-300 rounded-lg px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
                                   />
+                                </div>
+                              </div>
+
+                              <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                  <label className="block text-xs font-semibold text-gray-700 mb-1.5 uppercase tracking-wide">Email ID (optional)</label>
+                                  <input
+                                      type="email"
+                                      value={newPatientEmail}
+                                      onChange={e => setNewPatientEmail(e.target.value)}
+                                      placeholder="patient@email.com"
+                                      className="w-full border border-gray-300 rounded-lg px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-xs font-semibold text-gray-700 mb-1.5 uppercase tracking-wide">WhatsApp this number?</label>
+                                  <div className="grid grid-cols-2 gap-2">
+                                    <button type="button" onClick={() => setNewPatientWhatsapp(true)}
+                                            className={`px-3 py-2.5 rounded-lg text-sm font-bold border ${newPatientWhatsapp ? 'bg-green-600 text-white border-green-600' : 'bg-white text-gray-600 border-gray-300'}`}>
+                                      ✓ Yes
+                                    </button>
+                                    <button type="button" onClick={() => setNewPatientWhatsapp(false)}
+                                            className={`px-3 py-2.5 rounded-lg text-sm font-bold border ${!newPatientWhatsapp ? 'bg-gray-700 text-white border-gray-700' : 'bg-white text-gray-600 border-gray-300'}`}>
+                                      No
+                                    </button>
+                                  </div>
                                 </div>
                               </div>
 
@@ -3617,13 +4088,25 @@ ${patient.followUpAdvice ? `
                             <p className="text-xs text-gray-500">Complete billing / package formalities for patients sent here by the doctor, then assign a ward to move them to IPD.</p>
                           </div>
 
-                          {patients.filter(p => p.status === 'Admission').length === 0 ? (
+                          <div className="bg-white p-3 rounded-xl border shadow-sm flex items-center gap-2">
+                            <Search size={16} className="text-gray-400 shrink-0"/>
+                            <input
+                                type="text"
+                                value={admissionSearch}
+                                onChange={(e) => setAdmissionSearch(e.target.value)}
+                                placeholder="Search by UHID or patient name..."
+                                className="w-full outline-none text-sm"
+                            />
+                          </div>
+
+                          {patients.filter(p => p.status === 'Admission' && matchesSearch(p, admissionSearch)).length === 0 ? (
+
                               <div className="bg-white p-10 rounded-xl border border-dashed border-gray-300 text-center text-gray-500">
                                 <BedDouble className="w-12 h-12 mx-auto text-gray-300 mb-3"/>
                                 <p className="font-medium">No patients pending admission formalities.</p>
                               </div>
                           ) : (
-                              patients.filter(p => p.status === 'Admission').map(p => (
+                              patients.filter(p => p.status === 'Admission' && matchesSearch(p, admissionSearch)).map(p => (
                                   <div key={p.id} className="bg-white p-4 rounded-xl border shadow-sm space-y-3">
                                     <div className="flex justify-between items-start">
                                       <div>
@@ -3644,6 +4127,10 @@ ${patient.followUpAdvice ? `
                                       <div>
                                         <p className="text-xs font-bold text-gray-400 uppercase mb-1">Expected Indoor Days</p>
                                         <p className="text-sm text-gray-800">{p.admissionExpectedDays ? `${p.admissionExpectedDays} day(s)` : 'Not specified'}</p>
+                                      </div>
+                                      <div className="sm:col-span-2">
+                                        <p className="text-xs font-bold text-gray-400 uppercase mb-1">Doctor / Unit (MO એ select કરેલો)</p>
+                                        <p className="text-sm text-gray-800 font-semibold">{p.ipdDoctorName || 'Not specified'}</p>
                                       </div>
                                     </div>
 
@@ -3698,8 +4185,48 @@ ${patient.followUpAdvice ? `
                       />
                     </div>
 
+                    <div className="bg-white p-2 rounded-xl border shadow-sm flex flex-wrap items-center gap-2">
+                      <span className="text-xs font-semibold text-gray-500 uppercase px-1">View:</span>
+                      <button onClick={() => setNursingBifurcation('All')}
+                              className={`px-3 py-1.5 rounded-full text-xs font-bold border ${nursingBifurcation === 'All' ? 'bg-gray-800 text-white border-gray-800' : 'bg-white text-gray-600 border-gray-300'}`}>
+                        All
+                      </button>
+                      <button onClick={() => setNursingBifurcation('OPD')}
+                              className={`px-3 py-1.5 rounded-full text-xs font-bold border ${nursingBifurcation === 'OPD' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-300'}`}>
+                        OPD
+                      </button>
+                      <button onClick={() => setNursingBifurcation('Emergency')}
+                              className={`px-3 py-1.5 rounded-full text-xs font-bold border ${nursingBifurcation === 'Emergency' ? 'bg-red-600 text-white border-red-600' : 'bg-white text-gray-600 border-gray-300'}`}>
+                        🚨 Emergency
+                      </button>
+                      <div className="h-5 w-px bg-gray-200"></div>
+                      <span className="text-xs font-semibold text-gray-500 uppercase">Dept-wise:</span>
+                      <DepartmentPickerButton
+                          selected={['All', 'Emergency', 'OPD'].includes(nursingBifurcation) ? '' : nursingBifurcation}
+                          options={activeDepartmentNames}
+                          onSelect={(d) => { setNursingBifurcation(d); setNursingDoctorFilter('All'); }}
+                      />
+                      {!['All', 'Emergency', 'OPD'].includes(nursingBifurcation) && (
+                          <>
+                            <div className="h-5 w-px bg-gray-200"></div>
+                            <span className="text-xs font-semibold text-gray-500 uppercase">Doctor:</span>
+                            <button onClick={() => setNursingDoctorFilter('All')}
+                                    className={`px-2.5 py-1 rounded-full text-xs font-bold border ${nursingDoctorFilter === 'All' ? 'bg-gray-800 text-white border-gray-800' : 'bg-white text-gray-600 border-gray-300'}`}>
+                              All
+                            </button>
+                            {getDoctorListForDept(nursingBifurcation).filter(d => d.name).map(doc => (
+                                <button key={doc.name}
+                                        onClick={() => selectDoctorFilterWithPin('nursingTab', nursingBifurcation, doc.name, setNursingDoctorFilter)}
+                                        className={`px-2.5 py-1 rounded-full text-xs font-bold border ${nursingDoctorFilter === doc.name ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-gray-600 border-gray-300'}`}>
+                                  {doc.pin ? '🔒 ' : ''}{doc.name}
+                                </button>
+                            ))}
+                          </>
+                      )}
+                    </div>
+
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                      {patients.filter(p => p.status === 'Nursing' && matchesSearch(p, nursingSearch)).length === 0 ? (
+                      {patients.filter(p => p.status === 'Nursing' && matchesSearch(p, nursingSearch) && (nursingBifurcation === 'All' || (nursingBifurcation === 'Emergency' ? p.visitType === 'Emergency' : nursingBifurcation === 'OPD' ? p.visitType === 'OPD' : p.department === nursingBifurcation)) && (nursingDoctorFilter === 'All' || getDeptInfo(p.department).doctorName === nursingDoctorFilter)).length === 0 ? (
                           <div
 
                               className="col-span-full bg-white p-10 rounded-xl border border-dashed border-gray-300 text-center text-gray-500">
@@ -3708,7 +4235,7 @@ ${patient.followUpAdvice ? `
                             <p className="text-xs mt-1">Patients registered at Reception will appear here.</p>
                           </div>
                       ) : (
-                          patients.filter(p => p.status === 'Nursing' && matchesSearch(p, nursingSearch)).map(p => (
+                          patients.filter(p =>p.status === 'Nursing' && matchesSearch(p, nursingSearch) && (nursingBifurcation === 'All' || (nursingBifurcation === 'Emergency' ? p.visitType === 'Emergency' : nursingBifurcation === 'OPD' ? p.visitType === 'OPD' : p.department === nursingBifurcation)) && (nursingDoctorFilter === 'All' || getDeptInfo(p.department).doctorName === nursingDoctorFilter)).map(p => (
                               <div key={p.id}
                                    className="bg-white rounded-xl border shadow-sm overflow-hidden flex flex-col">
                                 <div
@@ -3718,17 +4245,25 @@ ${patient.followUpAdvice ? `
                                       <h4 className="font-bold text-gray-900 text-lg">{p.name}</h4>
                                       <span
                                           className="text-xs font-medium text-gray-500 bg-white px-2 py-0.5 rounded border">{p.uhid}</span>
+                                      {p.visitType === 'Emergency' && (
+                                          <span className="text-[10px] font-bold bg-red-600 text-white px-1.5 py-0.5 rounded">🚨 EMERGENCY</span>
+                                      )}
                                     </div>
                                     <p className="text-sm text-gray-600 mt-1">{p.age} • {p.gender} • <span
                                         className="font-medium text-gray-800">{p.occupation}</span></p>
                                   </div>
-                                  <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full border ${
-                                      p.triage === 'RED' ? 'bg-red-100 text-red-400 border-red-200' :
-                                          p.triage === 'YELLOW' ? 'bg-yellow-100 text-yellow-400 border-yellow-200' :
-                                              'bg-green-100 text-green-700 border-green-200'
-                                  }`}>
-                          {p.triage}
-                                          </span>
+                                  <div className="flex gap-1">
+                                    {['GREEN', 'YELLOW', 'RED'].map(t => (
+                                        <button key={t} onClick={() => updatePatientTriage(p.id, t)}
+                                                className={`text-[10px] font-bold px-2 py-1 rounded-full border ${
+                                                    p.triage === t
+                                                        ? (t === 'RED' ? 'bg-red-600 text-white border-red-600' : t === 'YELLOW' ? 'bg-yellow-500 text-white border-yellow-500' : 'bg-green-600 text-white border-green-600')
+                                                        : 'bg-white text-gray-400 border-gray-300'
+                                                }`}>
+                                          {t}
+                                        </button>
+                                    ))}
+                                  </div>
                                 </div>
 
                                 <div className="px-5 pt-3">
@@ -3816,7 +4351,23 @@ ${patient.followUpAdvice ? `
 
 
                     {/* Department અને Search Bar ને બાજુ-બાજુમાં ગોઠવવા માટે */}
-                    <div className="bg-white rounded-xl border shadow-sm p-1 flex items-center gap-3">
+                    <div className="bg-white rounded-xl border shadow-sm p-1 flex items-center gap-3 flex-wrap">
+
+                      {/* 0. Visit Type Toggle */}
+                      <div className="flex items-center gap-1 shrink-0">
+                        <span className="text-xs font-semibold text-gray-500 uppercase">Type:</span>
+                        {['All', 'OPD', 'Emergency'].map(t => (
+                            <button key={t} onClick={() => setDoctorVisitTypeFilter(t)}
+                                    className={`px-2.5 py-1 rounded-full text-xs font-bold border ${
+                                        doctorVisitTypeFilter === t
+                                            ? (t === 'Emergency' ? 'bg-red-600 text-white border-red-600' : 'bg-gray-800 text-white border-gray-800')
+                                            : 'bg-white text-gray-600 border-gray-300'
+                                    }`}>
+                              {t === 'Emergency' ? '🚨 Emergency' : t}
+                            </button>
+                        ))}
+                      </div>
+                      <div className="h-6 w-px bg-gray-200"></div>
 
                       {/* 1. Department Picker */}
                       <div className="flex items-center gap-1 shrink-0">
@@ -3824,9 +4375,29 @@ ${patient.followUpAdvice ? `
                         <DepartmentPickerButton
                             selected={doctorDeptFilter === 'All' ? '' : doctorDeptFilter}
                             options={activeDepartmentNames}
-                            onSelect={setDoctorDeptFilter}
+                            onSelect={(d) => { setDoctorDeptFilter(d); setDoctorTabDoctorFilter('All'); }}
                         />
                       </div>
+
+                      {doctorDeptFilter !== 'All' && (
+                          <>
+                            <div className="h-6 w-px bg-gray-200"></div>
+                            <div className="flex items-center gap-1 flex-wrap">
+                              <span className="text-xs font-semibold text-gray-500 uppercase">Doctor/Unit:</span>
+                              <button onClick={() => setDoctorTabDoctorFilter('All')}
+                                      className={`px-2.5 py-1 rounded-full text-xs font-bold border ${doctorTabDoctorFilter === 'All' ? 'bg-gray-800 text-white border-gray-800' : 'bg-white text-gray-600 border-gray-300'}`}>
+                                All
+                              </button>
+                              {getDoctorListForDept(doctorDeptFilter).filter(d => d.name).map(doc => (
+                                  <button key={doc.name}
+                                          onClick={() => selectDoctorFilterWithPin('doctorTab', doctorDeptFilter, doc.name, setDoctorTabDoctorFilter)}
+                                          className={`px-2.5 py-1 rounded-full text-xs font-bold border ${doctorTabDoctorFilter === doc.name ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-gray-600 border-gray-300'}`}>
+                                    {doc.pin ? '🔒 ' : ''}{doc.name}
+                                  </button>
+                              ))}
+                            </div>
+                          </>
+                      )}
 
                       {/* 2. Divider Line */}
                       <div className="h-6 w-px bg-gray-200"></div>
@@ -3848,10 +4419,10 @@ ${patient.followUpAdvice ? `
                         className="bg-white rounded-xl border shadow-sm p-1 flex flex-wrap gap-2 items-center overflow-x-auto">
                       <span className="text-xs font-semibold text-gray-400 uppercase px-2">Waiting:</span>
 
-                      {patients.filter(p => p.status === 'Doctor' && matchesSearch(p, doctorQueueSearch) && (doctorDeptFilter === 'All' || p.department === doctorDeptFilter || (p.referrals || []).some(r => r.toDept === doctorDeptFilter && r.status === 'Pending'))).length === 0 ? (
+                      {patients.filter(p =>p.status === 'Doctor' && matchesSearch(p, doctorQueueSearch) && (doctorDeptFilter === 'All' || p.department === doctorDeptFilter || (p.referrals || []).some(r => r.toDept === doctorDeptFilter && r.status === 'Pending')) && (doctorVisitTypeFilter === 'All' || p.visitType === doctorVisitTypeFilter) && (doctorTabDoctorFilter === 'All' || p.assignedDoctor === doctorTabDoctorFilter) ).length === 0 ? (
                           <span className="text-sm text-gray-500 italic">No matching patients in queue</span>
                       ) : (
-                          patients.filter(p => p.status === 'Doctor' && matchesSearch(p, doctorQueueSearch) && (doctorDeptFilter === 'All' || p.department === doctorDeptFilter || (p.referrals || []).some(r => r.toDept === doctorDeptFilter && r.status === 'Pending'))).map(p => (
+                          patients.filter(p =>p.status === 'Doctor' && matchesSearch(p, doctorQueueSearch) && (doctorDeptFilter === 'All' || p.department === doctorDeptFilter || (p.referrals || []).some(r => r.toDept === doctorDeptFilter && r.status === 'Pending')) && (doctorVisitTypeFilter === 'All' || p.visitType === doctorVisitTypeFilter) && (doctorTabDoctorFilter === 'All' || p.assignedDoctor === doctorTabDoctorFilter) ).map(p => (
                               <button
                                   key={p.id}
                                   onClick={() => setSelectedPatientId(p.id)}
@@ -4125,6 +4696,12 @@ ${patient.followUpAdvice ? `
                                                       <details className="mt-1">
                                                         <summary className="text-xs text-amber-700 cursor-pointer font-semibold">View Discharge Summary</summary>
                                                         <p className="text-xs text-gray-600 whitespace-pre-wrap mt-1">{visit.dischargeSummary}</p>
+                                                      </details>
+                                                  )}
+                                                  {visit.labResults && (
+                                                      <details className="mt-1">
+                                                        <summary className="text-xs text-blue-700 cursor-pointer font-semibold">View Lab Results (this visit)</summary>
+                                                        <p className="text-xs text-gray-600 whitespace-pre-wrap mt-1">{visit.labResults}</p>
                                                       </details>
                                                   )}
                                                   {visit.pendingReports && visit.pendingReports.length > 0 && (
@@ -4969,6 +5546,9 @@ ${patient.followUpAdvice ? `
                                         Print Case Paper
 
                                       </button>
+                                      <button onClick={() => sharePrescription({ ...activePatient, prescriptions, diagnoses: acceptedDiagnosis, followUpAdvice })} className="bg-green-500 text-white px-4 py-2.5 rounded-lg text-sm font-bold hover:bg-green-600">
+                                        📱 WhatsApp/Email
+                                      </button>
                                       <button onClick={finishConsultation} className="bg-green-600 text-white px-8 py-2.5 rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-green-700 transition-colors shadow-sm">
                                         <CheckCircle2 size={18}/> Send to Pharmacy / Admission Desk
                                       </button>
@@ -5089,7 +5669,8 @@ ${patient.followUpAdvice ? `
                               <div className="flex justify-between items-start">
                                 <div>
                                   <h3 className="font-bold">{p.name} <span className="text-sm text-gray-500">({p.age}, {p.gender})</span></h3>
-                                  <p className="text-xs text-gray-500">{p.uhid}</p>
+                                  <p className="text-xs text-gray-500">{p.uhid} • {p.department}</p>
+                                  <p className="text-xs font-semibold text-gray-600 mt-0.5">👨‍⚕️ {p.ipdDoctorName || getDeptInfo(p.department).doctorName || 'Not assigned'}</p>
                                   <p className="text-sm text-indigo-700 font-medium mt-1">{(p.diagnoses || []).join(', ')}</p>
                                 </div>
                                 <div className="flex flex-col items-end gap-1">
@@ -5313,17 +5894,41 @@ ${patient.followUpAdvice ? `
                                           ) : (
                                               <ul className="divide-y border rounded-lg bg-white mb-2">
                                                 {activeDay.procedures.map(pr => (
-                                                    <li key={pr.id} className="flex items-center justify-between px-3 py-2">
-                                                      <span className="text-sm text-gray-800">
-                                                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 mr-2">Procedure</span>
-                                                        {pr.text}
-                                                      </span>
-                                                      <button
-                                                          onClick={() => removeIpdProcedure(p, activeDay.id, pr.id)}
-                                                          className="text-red-400 hover:text-red-600 p-1"
-                                                      >
-                                                        <Trash2 size={14}/>
-                                                      </button>
+                                                    <li key={pr.id} className="px-3 py-2">
+                                                      <div className="flex items-center justify-between">
+                                                        <span className="text-sm text-gray-800">
+                                                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 mr-2">Procedure</span>
+                                                          {pr.text}
+                                                        </span>
+                                                        <button
+                                                            onClick={() => removeIpdProcedure(p, activeDay.id, pr.id)}
+                                                            className="text-red-400 hover:text-red-600 p-1"
+                                                        >
+                                                          <Trash2 size={14}/>
+                                                        </button>
+                                                      </div>
+                                                      <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                                                        <span className="text-[10px] font-bold text-gray-400 uppercase">Outcome:</span>
+                                                        {['Successful', 'Complication', 'Failed'].map(o => (
+                                                            <button key={o} onClick={() => setIpdProcedureOutcome(p, activeDay.id, pr.id, 'outcome', o)}
+                                                                    className={`text-[10px] font-bold px-2 py-1 rounded-full border ${
+                                                                        pr.outcome === o
+                                                                            ? (o === 'Successful' ? 'bg-green-600 text-white border-green-600' : o === 'Complication' ? 'bg-yellow-500 text-white border-yellow-500' : 'bg-red-600 text-white border-red-600')
+                                                                            : 'bg-white text-gray-400 border-gray-300'
+                                                                    }`}>
+                                                              {o}
+                                                            </button>
+                                                        ))}
+                                                      </div>
+                                                      {pr.outcome && (
+                                                          <input
+                                                              type="text"
+                                                              defaultValue={pr.outcomeNotes || ''}
+                                                              onBlur={(e) => setIpdProcedureOutcome(p, activeDay.id, pr.id, 'outcomeNotes', e.target.value)}
+                                                              placeholder="Outcome notes (optional)..."
+                                                              className="w-full mt-1.5 border rounded-lg px-2 py-1 text-xs"
+                                                          />
+                                                      )}
                                                     </li>
                                                 ))}
                                               </ul>
@@ -5350,6 +5955,101 @@ ${patient.followUpAdvice ? `
                                 })()}
 
                               </div>
+
+                                    {p.department === 'OBG & Gynec' && (
+                                        <div className="mt-4 border-t pt-4 space-y-3">
+                                          <h5 className="text-xs font-bold text-pink-600 uppercase tracking-wider">
+                                            Delivery / Birth Details {p.deliveryDetails?.modeOfDelivery ? '✓ Recorded' : '(not recorded yet)'}
+                                          </h5>
+                                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 bg-pink-50 border border-pink-200 rounded-lg p-3">
+                                            <div>
+                                              <label className="text-[10px] font-bold text-gray-500 uppercase">Mode of Delivery</label>
+                                              <select
+                                                  defaultValue={p.deliveryDetails?.modeOfDelivery || ''}
+                                                  onChange={(e) => setDeliveryField(p.id, 'modeOfDelivery', e.target.value)}
+                                                  className="w-full border rounded-lg px-2 py-1.5 text-sm bg-white"
+                                              >
+                                                <option value="">Select...</option>
+                                                <option value="Normal Vaginal Delivery (NVD)">Normal Vaginal Delivery (NVD)</option>
+                                                <option value="Assisted Vaginal Delivery (Forceps/Vacuum)">Assisted Vaginal Delivery (Forceps/Vacuum)</option>
+                                                <option value="LSCS (Emergency)">LSCS (Emergency)</option>
+                                                <option value="LSCS (Elective)">LSCS (Elective)</option>
+                                                <option value="Abortion / MTP">Abortion / MTP</option>
+                                              </select>
+                                            </div>
+                                            <div>
+                                              <label className="text-[10px] font-bold text-gray-500 uppercase">Date & Time of Delivery</label>
+                                              <input type="text" placeholder="DD/MM/YYYY, HH:MM"
+                                                     defaultValue={p.deliveryDetails?.dateTime || ''}
+                                                     onChange={(e) => setDeliveryField(p.id, 'dateTime', e.target.value)}
+                                                     className="w-full border rounded-lg px-2 py-1.5 text-sm bg-white"/>
+                                            </div>
+                                            <div>
+                                              <label className="text-[10px] font-bold text-gray-500 uppercase">Baby Sex</label>
+                                              <select
+                                                  defaultValue={p.deliveryDetails?.babySex || ''}
+                                                  onChange={(e) => setDeliveryField(p.id, 'babySex', e.target.value)}
+                                                  className="w-full border rounded-lg px-2 py-1.5 text-sm bg-white"
+                                              >
+                                                <option value="">Select...</option>
+                                                <option value="Male">Male</option>
+                                                <option value="Female">Female</option>
+                                                <option value="Ambiguous">Ambiguous</option>
+                                                <option value="Stillbirth">Stillbirth</option>
+                                                <option value="Twins">Twins</option>
+                                              </select>
+                                            </div>
+                                            <div>
+                                              <label className="text-[10px] font-bold text-gray-500 uppercase">Birth Weight (kg)</label>
+                                              <input type="text" placeholder="e.g., 2.8"
+                                                     defaultValue={p.deliveryDetails?.birthWeight || ''}
+                                                     onChange={(e) => setDeliveryField(p.id, 'birthWeight', e.target.value)}
+                                                     className="w-full border rounded-lg px-2 py-1.5 text-sm bg-white"/>
+                                            </div>
+                                            <div>
+                                              <label className="text-[10px] font-bold text-gray-500 uppercase">Apgar Score (1 min)</label>
+                                              <input type="text" placeholder="e.g., 8"
+                                                     defaultValue={p.deliveryDetails?.apgar1min || ''}
+                                                     onChange={(e) => setDeliveryField(p.id, 'apgar1min', e.target.value)}
+                                                     className="w-full border rounded-lg px-2 py-1.5 text-sm bg-white"/>
+                                            </div>
+                                            <div>
+                                              <label className="text-[10px] font-bold text-gray-500 uppercase">Apgar Score (5 min)</label>
+                                              <input type="text" placeholder="e.g., 9"
+                                                     defaultValue={p.deliveryDetails?.apgar5min || ''}
+                                                     onChange={(e) => setDeliveryField(p.id, 'apgar5min', e.target.value)}
+                                                     className="w-full border rounded-lg px-2 py-1.5 text-sm bg-white"/>
+                                            </div>
+                                            <div>
+                                              <label className="text-[10px] font-bold text-gray-500 uppercase">Condition of Mother</label>
+                                              <input type="text" placeholder="e.g., Stable, vitals normal"
+                                                     defaultValue={p.deliveryDetails?.motherCondition || ''}
+                                                     onChange={(e) => setDeliveryField(p.id, 'motherCondition', e.target.value)}
+                                                     className="w-full border rounded-lg px-2 py-1.5 text-sm bg-white"/>
+                                            </div>
+                                            <div>
+                                              <label className="text-[10px] font-bold text-gray-500 uppercase">Condition of Baby</label>
+                                              <input type="text" placeholder="e.g., Active, crying well"
+                                                     defaultValue={p.deliveryDetails?.babyCondition || ''}
+                                                     onChange={(e) => setDeliveryField(p.id, 'babyCondition', e.target.value)}
+                                                     className="w-full border rounded-lg px-2 py-1.5 text-sm bg-white"/>
+                                            </div>
+                                            <div className="sm:col-span-2">
+                                              <label className="text-[10px] font-bold text-gray-500 uppercase">Additional Notes</label>
+                                              <textarea rows={2} placeholder="Complications, episiotomy, PPH, etc."
+                                                        defaultValue={p.deliveryDetails?.notes || ''}
+                                                        onChange={(e) => setDeliveryField(p.id, 'notes', e.target.value)}
+                                                        className="w-full border rounded-lg px-2 py-1.5 text-sm bg-white"/>
+                                            </div>
+                                          </div>
+                                          <button
+                                              onClick={() => saveDeliveryDetails(p)}
+                                              className="bg-pink-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-pink-700"
+                                          >
+                                            Save Delivery / Birth Details
+                                          </button>
+                                        </div>
+                                    )}
 
                                     <div className="mt-4 border-t pt-4 space-y-3">
                                       <div className="flex items-center justify-between">
@@ -5598,6 +6298,7 @@ ${patient.followUpAdvice ? `
                                   <div>
                                     <h3 className="font-bold">{p.name} <span className="text-sm text-gray-500">({p.age}, {p.gender})</span></h3>
                                     <p className="text-xs text-gray-500">{p.uhid} • {p.department}{p.ward ? ` • ${p.ward}` : ''}</p>
+                                    <p className="text-xs font-semibold text-gray-600 mt-0.5">👨‍⚕️ {p.ipdDoctorName || getDeptInfo(p.department).doctorName || 'Not assigned'}</p>
                                     <p className="text-sm text-indigo-700 font-medium mt-1">{(p.diagnoses || []).join(', ')}</p>
                                   </div>
                                   <span className="text-[10px] font-bold px-2 py-1 rounded-full bg-red-100 text-red-700 border border-red-200">ADMITTED</span>
@@ -5757,6 +6458,35 @@ ${patient.followUpAdvice ? `
                         <p className="text-xs text-gray-400 mt-1">Reception will complete billing/package formalities and assign a ward.</p>
                       </div>
                       <div>
+                        <label className="block text-xs font-semibold text-gray-700 mb-1.5 uppercase tracking-wide">Indoor Department</label>
+                        <DepartmentPickerButton
+                            selected={admissionSelectedDept}
+                            options={activeDepartmentNames}
+                            onSelect={(d) => { setAdmissionSelectedDept(d); setAdmissionSelectedDoctor(getDeptInfo(d).doctorName || ''); }}
+                            placeholder="Choose department"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-700 mb-1.5 uppercase tracking-wide">Doctor / Unit In-charge for Indoor</label>
+                        {(() => {
+                          const deptObj = (hospitalInfo.departments || []).find(d => d.name === admissionSelectedDept);
+                          const doctorList = deptObj
+                              ? ((deptObj.doctors && deptObj.doctors.length > 0) ? deptObj.doctors : (deptObj.doctorName ? [{ name: deptObj.doctorName }] : []))
+                              : [];
+                          if (doctorList.length === 0) return <p className="text-xs text-gray-400 italic">No doctors/units configured — set them in Settings.</p>;
+                          return (
+                              <div className="flex flex-wrap gap-2">
+                                {doctorList.filter(d => d.name).map((doc, i) => (
+                                    <button key={i} type="button" onClick={() => setAdmissionSelectedDoctor(doc.name)}
+                                            className={`px-3 py-1.5 rounded-full text-xs font-semibold border ${admissionSelectedDoctor === doc.name ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-gray-600 border-gray-300'}`}>
+                                      {doc.name}
+                                    </button>
+                                ))}
+                              </div>
+                          );
+                        })()}
+                      </div>
+                      <div>
                         <label className="block text-xs font-semibold text-gray-700 mb-1.5 uppercase tracking-wide">Procedure / Reason for Admission</label>
                         <textarea
                             value={admissionProcedureText}
@@ -5782,8 +6512,9 @@ ${patient.followUpAdvice ? `
                           Cancel
                         </button>
                         <button
+                            disabled={!admissionSelectedDept}
                             onClick={() => completeConsultation('Admission', '')}
-                            className="flex-1 bg-red-600 text-white px-4 py-2.5 rounded-lg text-sm font-bold hover:bg-red-700"
+                            className="flex-1 bg-red-600 text-white px-4 py-2.5 rounded-lg text-sm font-bold hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed"
                         >
                           Send to Admission Desk
                         </button>
@@ -5795,44 +6526,82 @@ ${patient.followUpAdvice ? `
               {/* --- WARD SELECTION MODAL (Admission Desk assigns the ward) --- */}
               {showWardModal && wardAdmissionPatient && (
                   <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-                    <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
+                    <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
                       <div>
-                        <h3 className="text-lg font-bold text-gray-900">Select Ward for Admission</h3>
+                        <h3 className="text-lg font-bold text-gray-900">Complete Indoor Admission</h3>
                         <p className="text-xs text-gray-500">{wardAdmissionPatient.name} — {wardAdmissionPatient.uhid}</p>
                       </div>
 
-                      {getWardStats().length === 0 ? (
-                          <p className="text-sm text-red-600">No wards configured. Please add wards from Settings first.</p>
-                      ) : (
-                          <div className="space-y-2">
-                            {getWardStats().map(w => (
-                                <button
-                                    key={w.name}
-                                    disabled={w.available <= 0}
-                                    onClick={() => setSelectedWardForAdmission(w.name)}
-                                    className={`w-full flex justify-between items-center px-4 py-3 rounded-lg border text-left ${
-                                        selectedWardForAdmission === w.name
-                                            ? 'bg-red-600 text-white border-red-600'
-                                            : w.available <= 0
-                                                ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
-                                                : 'bg-white text-gray-800 border-gray-300 hover:border-red-300'
-                                    }`}
-                                >
-                                  <span className="font-medium">{w.name}</span>
-                                  <span className={`text-xs font-bold ${selectedWardForAdmission === w.name ? 'text-white' : w.available <= 0 ? 'text-red-500' : 'text-green-600'}`}>
-                                    {w.available > 0 ? `${w.available} beds free` : 'FULL'}
-                                  </span>
-                                </button>
-                            ))}
-                          </div>
-                      )}
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-700 mb-1.5 uppercase tracking-wide">Indoor Department</label>
+                        <DepartmentPickerButton
+                            selected={admissionSelectedDept}
+                            options={activeDepartmentNames}
+                            onSelect={(d) => { setAdmissionSelectedDept(d); setAdmissionSelectedDoctor(getDeptInfo(d).doctorName || ''); }}
+                            placeholder="Choose department"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-700 mb-1.5 uppercase tracking-wide">Doctor / Unit In-charge</label>
+                        {(() => {
+                          const deptObj = (hospitalInfo.departments || []).find(d => d.name === admissionSelectedDept);
+                          const doctorList = deptObj
+                              ? ((deptObj.doctors && deptObj.doctors.length > 0)
+                                  ? deptObj.doctors
+                                  : (deptObj.doctorName ? [{ name: deptObj.doctorName }] : []))
+                              : [];
+                          if (doctorList.length === 0) {
+                            return <p className="text-xs text-gray-400 italic">No doctors/units configured for this department in Settings.</p>;
+                          }
+                          return (
+                              <div className="flex flex-wrap gap-2">
+                                {doctorList.filter(d => d.name).map((doc, i) => (
+                                    <button key={i} onClick={() => setAdmissionSelectedDoctor(doc.name)}
+                                            className={`px-3 py-1.5 rounded-full text-xs font-semibold border ${
+                                                admissionSelectedDoctor === doc.name
+                                                    ? 'bg-indigo-600 text-white border-indigo-600'
+                                                    : 'bg-white text-gray-600 border-gray-300 hover:border-indigo-300'
+                                            }`}>
+                                      {doc.name}
+                                    </button>
+                                ))}
+                              </div>
+                          );
+                        })()}
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-700 mb-1.5 uppercase tracking-wide">Select Ward</label>
+                        {getWardStats().length === 0 ? (
+                            <p className="text-sm text-red-600">No wards configured. Please add wards from Settings first.</p>
+                        ) : (
+                            <div className="space-y-2">
+                              {getWardStats().map(w => (
+                                  <button key={w.name} disabled={w.available <= 0} onClick={() => setSelectedWardForAdmission(w.name)}
+                                          className={`w-full flex justify-between items-center px-4 py-3 rounded-lg border text-left ${
+                                              selectedWardForAdmission === w.name
+                                                  ? 'bg-red-600 text-white border-red-600'
+                                                  : w.available <= 0
+                                                      ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
+                                                      : 'bg-white text-gray-800 border-gray-300 hover:border-red-300'
+                                          }`}>
+                                    <span className="font-medium">{w.name}</span>
+                                    <span className={`text-xs font-bold ${selectedWardForAdmission === w.name ? 'text-white' : w.available <= 0 ? 'text-red-500' : 'text-green-600'}`}>
+                                      {w.available > 0 ? `${w.available} beds free` : 'FULL'}
+                                    </span>
+                                  </button>
+                              ))}
+                            </div>
+                        )}
+                      </div>
 
                       <div className="flex gap-2 pt-2">
-                        <button onClick={() => { setShowWardModal(false); setWardAdmissionPatient(null); }} className="flex-1 bg-white border text-gray-600 px-4 py-2.5 rounded-lg text-sm font-semibold hover:bg-gray-50">
+                        <button onClick={() => { setShowWardModal(false); setWardAdmissionPatient(null); setAdmissionSelectedDept(''); setAdmissionSelectedDoctor(''); }} className="flex-1 bg-white border text-gray-600 px-4 py-2.5 rounded-lg text-sm font-semibold hover:bg-gray-50">
                           Cancel
                         </button>
                         <button
-                            disabled={!selectedWardForAdmission}
+                            disabled={!selectedWardForAdmission || !admissionSelectedDept}
                             onClick={confirmWardAdmission}
                             className="flex-1 bg-red-600 text-white px-4 py-2.5 rounded-lg text-sm font-bold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-red-700"
                         >
@@ -5965,9 +6734,8 @@ ${patient.followUpAdvice ? `
                               Next: Confirm →
                             </button>
                         )}
-
                         {dischargeStep === 3 && (
-                            <div className="flex gap-2">
+                            <div className="flex flex-wrap gap-2">
                               <button
                                   onClick={() => printDischargeSummary({ ...dischargePatient, dischargeOutcome, dischargeSummary, dischargedAt: dischargePatient.dischargedAt || new Date().toISOString() })}
                                   className="bg-blue-600 text-white px-5 py-2.5 rounded-lg text-sm font-bold hover:bg-blue-700"
@@ -5975,13 +6743,20 @@ ${patient.followUpAdvice ? `
                                 🖨️ Print Discharge Paper
                               </button>
                               <button
+                                  onClick={() => shareDischargeSummary({ ...dischargePatient, dischargeOutcome, dischargeSummary })}
+                                  className="bg-green-500 text-white px-4 py-2.5 rounded-lg text-sm font-bold hover:bg-green-600"
+                              >
+                                📱 Send WhatsApp/Email
+                              </button>
+                              <button
                                   onClick={confirmDischargeAndSendToPharmacy}
-                                  className="bg-green-600 text-white px-6 py-2.5 rounded-lg text-sm font-bold hover:bg-green-700 flex items-center gap-2"
+                                  className="bg-green-700 text-white px-6 py-2.5 rounded-lg text-sm font-bold hover:bg-green-800 flex items-center gap-2"
                               >
                                 <CheckCircle2 size={16}/> Confirm Discharge & Send to Pharmacy
                               </button>
                             </div>
                         )}
+
                       </div>
                     </div>
                   </div>
@@ -6027,7 +6802,14 @@ ${patient.followUpAdvice ? `
                         <div className="space-y-4">
                           {patients.filter(p => p.labStatus === 'Pending' && matchesSearch(p, labSearch) && (labCategoryFilter === 'All' || (p.investigationsOrdered || []).some(inv => getTestCategory(inv) === labCategoryFilter))).map(p => (
                               <div key={p.id} className="bg-white p-4 rounded-xl border shadow-sm">
-                                <h3 className="font-bold">{p.name} <span className="text-sm text-gray-500">({p.age}y, {p.gender})</span></h3>
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <h3 className="font-bold">{p.name} <span className="text-sm text-gray-500">({p.age}y, {p.gender})</span></h3>
+                                  {p.status === 'Discharged' && (
+                                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-200 text-slate-700 border border-slate-300">
+                                        ⚠ Already Discharged — report pending
+                                      </span>
+                                  )}
+                                </div>
 
                                 <p className="text-sm text-gray-600 mb-2">Investigations ordered: {(p.investigationsOrdered || []).join(', ') || 'General'}</p>
 
@@ -6159,7 +6941,6 @@ ${patient.followUpAdvice ? `
                   </div>
               )}
 
-              {/* --- REVIEW TAB (Placeholder) --- */}
 
               {/* --- MO FINAL REVIEW TAB --- */}
               {activeTab === 'review' && (
@@ -6169,13 +6950,50 @@ ${patient.followUpAdvice ? `
                       <p className="text-xs text-gray-500">OPD patients print their final case paper here; IPD patients print their discharge summary here. This is the only print/exit point.</p>
                     </div>
 
-                    {patients.filter(p => p.status === 'Review').length === 0 ? (
+                    <div className="bg-white p-3 rounded-xl border shadow-sm flex items-center gap-2">
+                      <Search size={16} className="text-gray-400 shrink-0"/>
+                      <input
+                          type="text"
+                          value={reviewSearch}
+                          onChange={(e) => setReviewSearch(e.target.value)}
+                          placeholder="Search by UHID or patient name..."
+                          className="w-full outline-none text-sm"
+                      />
+                    </div>
+
+                    <div className="bg-white p-2 rounded-xl border shadow-sm flex flex-wrap items-center gap-2">
+                      <span className="text-xs font-semibold text-gray-500 uppercase">Department:</span>
+                      <DepartmentPickerButton
+                          selected={reviewDeptFilter === 'All' ? '' : reviewDeptFilter}
+                          options={activeDepartmentNames}
+                          onSelect={(d) => { setReviewDeptFilter(d); setReviewDoctorFilter('All'); }}
+                      />
+                      {reviewDeptFilter !== 'All' && (
+                          <>
+                            <div className="h-5 w-px bg-gray-200"></div>
+                            <span className="text-xs font-semibold text-gray-500 uppercase">Doctor:</span>
+                            <button onClick={() => setReviewDoctorFilter('All')}
+                                    className={`px-2.5 py-1 rounded-full text-xs font-bold border ${reviewDoctorFilter === 'All' ? 'bg-gray-800 text-white border-gray-800' : 'bg-white text-gray-600 border-gray-300'}`}>
+                              All
+                            </button>
+                            {getDoctorListForDept(reviewDeptFilter).filter(d => d.name).map(doc => (
+                                <button key={doc.name}
+                                        onClick={() => selectDoctorFilterWithPin('reviewTab', reviewDeptFilter, doc.name, setReviewDoctorFilter)}
+                                        className={`px-2.5 py-1 rounded-full text-xs font-bold border ${reviewDoctorFilter === doc.name ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-gray-600 border-gray-300'}`}>
+                                  {doc.pin ? '🔒 ' : ''}{doc.name}
+                                </button>
+                            ))}
+                          </>
+                      )}
+                    </div>
+
+                    {patients.filter(p => p.status === 'Review' && matchesSearch(p, reviewSearch) && (reviewDeptFilter === 'All' || p.department === reviewDeptFilter) && (reviewDoctorFilter === 'All' || p.assignedDoctor === reviewDoctorFilter || getDeptInfo(p.department).doctorName === reviewDoctorFilter)).length === 0 ? (
                         <div className="bg-white p-10 rounded-xl border border-dashed border-gray-300 text-center text-gray-500">
                           <ClipboardCheck className="w-12 h-12 mx-auto text-gray-300 mb-3"/>
                           <p className="font-medium">No patients pending final review.</p>
                         </div>
                     ) : (
-                        patients.filter(p => p.status === 'Review').map(p => (
+                        patients.filter(p => p.status === 'Review' && matchesSearch(p, reviewSearch) && (reviewDeptFilter === 'All' || p.department === reviewDeptFilter) && (reviewDoctorFilter === 'All' || p.assignedDoctor === reviewDoctorFilter || getDeptInfo(p.department).doctorName === reviewDoctorFilter)).map(p => (
                             <div key={p.id} className="bg-white p-4 rounded-xl border shadow-sm flex justify-between items-center">
                               <div>
                                 <h4 className="font-bold text-gray-900">{p.name} <span className="text-sm text-gray-500">({p.age}, {p.gender})</span></h4>
@@ -6643,7 +7461,34 @@ ${patient.followUpAdvice ? `
                       </div>
 
                       <div className="border-t pt-4">
+                        <label className="text-xs font-semibold text-gray-700 uppercase block mb-2">Patient Assignment Mode</label>
+                        <div className="grid grid-cols-2 gap-2 mb-3">
+                          <button type="button" onClick={() => setHospitalInfo(prev => ({ ...prev, assignmentMode: 'Automatic' }))}
+                                  className={`px-3 py-2.5 rounded-lg text-sm font-bold border ${hospitalInfo.assignmentMode === 'Automatic' ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-gray-600 border-gray-300'}`}>
+                            Automatic (Duty-wise)
+                          </button>
+                          <button type="button" onClick={() => setHospitalInfo(prev => ({ ...prev, assignmentMode: 'Selective' }))}
+                                  className={`px-3 py-2.5 rounded-lg text-sm font-bold border ${hospitalInfo.assignmentMode === 'Selective' ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-gray-600 border-gray-300'}`}>
+                            Selective (Reception chooses Dr.)
+                          </button>
+                        </div>
+                        <label className="text-xs font-semibold text-gray-700 uppercase block mb-1">Odd-Even Load Balancing (same duty ma multiple Dr. hoy tyare)</label>
+                        <div className="grid grid-cols-2 gap-2 mb-2">
+                          <button type="button" onClick={() => setHospitalInfo(prev => ({ ...prev, oddEvenEnabled: true }))}
+                                  className={`px-3 py-2 rounded-lg text-sm font-bold border ${hospitalInfo.oddEvenEnabled ? 'bg-green-600 text-white border-green-600' : 'bg-white text-gray-600 border-gray-300'}`}>
+                            ✓ Yes
+                          </button>
+                          <button type="button" onClick={() => setHospitalInfo(prev => ({ ...prev, oddEvenEnabled: false }))}
+                                  className={`px-3 py-2 rounded-lg text-sm font-bold border ${!hospitalInfo.oddEvenEnabled ? 'bg-gray-700 text-white border-gray-700' : 'bg-white text-gray-600 border-gray-300'}`}>
+                            No
+                          </button>
+                        </div>
+                        <p className="text-[11px] text-gray-400 mb-4">Yes rakhta same day/time/duty ma multiple Doctor/Unit hoy to patients automatically vahenchayine assign thase (jenu load ochhu hoy tene pehla).</p>
+                      </div>
+
+                      <div className="border-t pt-4">
                         <label className="text-xs font-semibold text-gray-700 uppercase block mb-2">Departments Available at This Hospital</label>
+
                         <div className="space-y-2 max-h-96 overflow-y-auto">
                           {(hospitalInfo.departments && hospitalInfo.departments.length ? hospitalInfo.departments
                                   : DEPARTMENTS.map(name => ({ name, active: false, doctorName: '', doctorSign: '' }))
@@ -6672,7 +7517,7 @@ ${patient.followUpAdvice ? `
                                               : (dept.doctorName ? [{ name: dept.doctorName, sign: dept.doctorSign, days: [] }] : [])
                                       ).map((doc, docIdx) => (
                                           <div key={doc.id || docIdx} className="border rounded-lg p-2.5 bg-white space-y-2">
-                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                                               <input type="text" placeholder="Doctor / Unit Name (e.g., Dr. Kju - Unit 1)"
                                                      value={doc.name || ''}
                                                      onChange={(e) => updateDeptDoctor(idx, docIdx, 'name', e.target.value)}
@@ -6686,28 +7531,47 @@ ${patient.followUpAdvice ? `
                                                        reader.readAsDataURL(file);
                                                      }}
                                                      className="border rounded-lg p-1.5 text-xs bg-white" />
+                                              <input type="text" placeholder="View PIN (optional)" maxLength={6}
+                                                     value={doc.pin || ''}
+                                                     onChange={(e) => updateDeptDoctor(idx, docIdx, 'pin', e.target.value)}
+                                                     className="border rounded-lg px-2 py-1.5 text-sm" />
                                             </div>
-                                            <div className="flex flex-wrap items-center gap-1">
-                                              <span className="text-[10px] font-bold text-gray-400 uppercase mr-1">Days:</span>
-                                              {WEEKDAYS.map(day => (
-                                                  <button
-                                                      key={day}
-                                                      type="button"
-                                                      onClick={() => toggleDeptDoctorDay(idx, docIdx, day)}
-                                                      className={`text-[10px] font-semibold px-2 py-1 rounded-full border ${
-                                                          (doc.days || []).includes(day)
-                                                              ? 'bg-indigo-600 text-white border-indigo-600'
-                                                              : 'bg-white text-gray-500 border-gray-300'
-                                                      }`}
-                                                  >
-                                                    {day.slice(0, 3)}
-                                                  </button>
-                                              ))}
-                                              <span className="text-[10px] text-gray-400 ml-1">(koi day select na kare to hammesha on-duty ganase)</span>
-                                              <button onClick={() => removeDeptDoctor(idx, docIdx)} className="text-red-400 hover:text-red-600 ml-auto p-1">
+                                            <div className="flex items-center justify-between">
+                                              <span className="text-[10px] font-bold text-gray-400 uppercase">Duty Slots (day + time + OPD/Emergency)</span>
+                                              <button onClick={() => removeDeptDoctor(idx, docIdx)} className="text-red-400 hover:text-red-600 p-1">
                                                 <Trash2 size={13}/>
                                               </button>
                                             </div>
+
+                                            {(doc.dutySlots || []).length === 0 ? (
+                                                <p className="text-[11px] text-gray-400 italic">Koi slot nathi — aa doctor hammesha on-duty (OPD+Emergency, badha din) ganase.</p>
+                                            ) : (
+                                                <div className="space-y-1.5">
+                                                  {doc.dutySlots.map(slot => (
+                                                      <div key={slot.id} className="grid grid-cols-12 gap-1 items-center bg-gray-50 border rounded-lg p-1.5">
+                                                        <select value={slot.day} onChange={(e) => updateDutySlot(idx, docIdx, slot.id, 'day', e.target.value)}
+                                                                className="col-span-3 border rounded px-1 py-1 text-[11px]">
+                                                          <option value="All">All Days</option>
+                                                          {WEEKDAYS.map(d => <option key={d} value={d}>{d.slice(0, 3)}</option>)}
+                                                        </select>
+                                                        <input type="time" value={slot.start} onChange={(e) => updateDutySlot(idx, docIdx, slot.id, 'start', e.target.value)}
+                                                               className="col-span-3 border rounded px-1 py-1 text-[11px]" />
+                                                        <input type="time" value={slot.end} onChange={(e) => updateDutySlot(idx, docIdx, slot.id, 'end', e.target.value)}
+                                                               className="col-span-3 border rounded px-1 py-1 text-[11px]" />
+                                                        <select value={slot.type} onChange={(e) => updateDutySlot(idx, docIdx, slot.id, 'type', e.target.value)}
+                                                                className="col-span-2 border rounded px-1 py-1 text-[11px]">
+                                                          <option value="OPD">OPD</option>
+                                                          <option value="Emergency">Emergency</option>
+                                                          <option value="Both">Both</option>
+                                                        </select>
+                                                        <button onClick={() => removeDutySlot(idx, docIdx, slot.id)} className="col-span-1 text-red-400 hover:text-red-600 text-center font-bold">×</button>
+                                                      </div>
+                                                  ))}
+                                                </div>
+                                            )}
+                                            <button onClick={() => addDutySlot(idx, docIdx)} className="text-[11px] font-semibold text-indigo-600 hover:text-indigo-800 flex items-center gap-1">
+                                              <Plus size={12}/> Add Duty Slot
+                                            </button>
                                           </div>
                                       ))}
                                       <button
